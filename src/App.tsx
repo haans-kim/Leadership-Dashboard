@@ -1,11 +1,18 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import Layout from './components/Layout'
+import LeadershipDashboard from './pages/Dashboard'
 import './App.css'
-import LeadershipDashboard from './leadership-dashboard-prototype';
 
 function App() {
-  return <LeadershipDashboard />;
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<LeadershipDashboard />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </Layout>
+  )
 }
 
 export default App

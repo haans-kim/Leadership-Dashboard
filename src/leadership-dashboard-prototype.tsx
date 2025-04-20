@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, 
   PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, XAxis, YAxis, CartesianGrid, 
@@ -49,6 +49,38 @@ export default function LeadershipDashboard() {
   const [selectedPrinciple, setSelectedPrinciple] = useState('all');
   const [selectedManager, setSelectedManager] = useState('홍길동');
   const [activeTab, setActiveTab] = useState('overview');
+  const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([]);
+  const [principleScoreData, setPrincipleScoreData] = useState<PrincipleScore[]>([]);
+  const [comparisonData, setComparisonData] = useState<ComparisonData[]>([]);
+  const [distributionData, setDistributionData] = useState<DistributionData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  
+  useEffect(() => {
+    async function loadAll() {
+      setLoading(true);
+      const [tsRes, psRes, cmpRes, distRes] = await Promise.all([
+        fetch('/api/time-series').then(res => res.json()),
+        fetch('/api/principle-scores').then(res => res.json()),
+        fetch('/api/comparison').then(res => res.json()),
+        fetch('/api/distribution').then(res => res.json()),
+      ]);
+      setTimeSeriesData(tsRes);
+      setPrincipleScoreData(psRes);
+      setComparisonData(cmpRes);
+      setDistributionData(distRes);
+      setLoading(false);
+    }
+    loadAll();
+  }, []);
+  
+  // 로딩 중일 때 표시
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <span className="text-lg font-medium">로딩 중...</span>
+      </div>
+    );
+  }
   
   // 분기 목록
   const quarters = ['2025-Q1', '2025-Q2', '2025-Q3', '2025-Q4', '2026-Q1', '2026-Q2'];
@@ -66,47 +98,6 @@ export default function LeadershipDashboard() {
     { id: 'p5', name: '조직의 비전과 목표를 수시로 커뮤니케이션하고 적극 공유' },
     { id: 'p6', name: '자유롭게 말할 수 있는 분위기 조성, 개개인의 다양성 존중' },
     { id: 'p7', name: '객관적인 데이터 기반 최선의 선택' }
-  ];
-  
-  // 임의의 시계열 데이터
-  const timeSeriesData = [
-    { quarter: '2025-Q1', score: 3.4 },
-    { quarter: '2025-Q2', score: 3.8 },
-    { quarter: '2025-Q3', score: 4.1 },
-    { quarter: '2025-Q4', score: 3.9 },
-    { quarter: '2026-Q1', score: 4.3 },
-    { quarter: '2026-Q2', score: 4.5 }
-  ];
-  
-  // 임의의 원칙별 점수 데이터
-  const principleScoreData = [
-    { principle: 'P1', name: '목적/결과물/방향성', score: 4.2 },
-    { principle: 'P2', name: '내용(본질)집중', score: 3.8 },
-    { principle: 'P3', name: '전사관점 의사결정', score: 4.6 },
-    { principle: 'P4', name: '협업과 실행', score: 4.0 },
-    { principle: 'P5', name: '비전/목표 공유', score: 3.5 },
-    { principle: 'P6', name: '다양성 존중', score: 4.3 },
-    { principle: 'P7', name: '데이터 기반 결정', score: 4.1 }
-  ];
-  
-  // 임의의 비교 데이터 (본인/상사/구성원)
-  const comparisonData = [
-    { principle: 'P1', name: '목적/결과물/방향성', self: 4.0, manager: 4.5, members: 3.8 },
-    { principle: 'P2', name: '내용(본질)집중', self: 3.5, manager: 4.0, members: 3.2 },
-    { principle: 'P3', name: '전사관점 의사결정', self: 4.2, manager: 4.8, members: 4.0 },
-    { principle: 'P4', name: '협업과 실행', self: 3.8, manager: 4.3, members: 3.5 },
-    { principle: 'P5', name: '비전/목표 공유', self: 3.2, manager: 3.7, members: 3.0 },
-    { principle: 'P6', name: '다양성 존중', self: 4.5, manager: 4.0, members: 3.8 },
-    { principle: 'P7', name: '데이터 기반 결정', self: 4.3, manager: 3.9, members: 3.6 }
-  ];
-  
-  // 임의의 분포 데이터
-  const distributionData = [
-    { name: '미흡(1점)', value: 5 },
-    { name: '개선필요(2점)', value: 12 },
-    { name: '양호(3점)', value: 25 },
-    { name: '우수(4점)', value: 38 },
-    { name: '탁월(5점)', value: 20 }
   ];
   
   // 현재 선택된 탭에 따라 컴포넌트 렌더링
@@ -244,11 +235,19 @@ export default function LeadershipDashboard() {
 
 // 개요 탭 컴포넌트
 function OverviewTab({ timeSeriesData, principleScoreData, distributionData }: OverviewTabProps) {
+  // 데이터가 충분히 로드되지 않았으면 메시지 표시
+  if (timeSeriesData.length === 0 || principleScoreData.length === 0 || distributionData.length === 0) {
+    return (
+      <div className="p-4 text-center text-gray-500">
+        데이터가 없습니다.
+      </div>
+    );
+  }
   const CHART_COLORS = ['#FF8042', '#FFBB28', '#00C49F', '#0088FE', '#8884d8'];
   
   // 현재 점수 계산
-  const currentScore = timeSeriesData[timeSeriesData.length - 1].score;
-  const previousScore = timeSeriesData[timeSeriesData.length - 2].score;
+  const currentScore = timeSeriesData.at(-1)?.score ?? 0;
+  const previousScore = timeSeriesData.length > 1 ? timeSeriesData.at(-2)?.score ?? currentScore : currentScore;
   const changePercent = Number(((currentScore - previousScore) / previousScore * 100).toFixed(1));
   
   // 최고/최저 원칙 찾기

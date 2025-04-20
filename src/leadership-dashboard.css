@@ -14,6 +14,20 @@
   @apply bg-orange-500;
 }
 
+/* Chart customizations */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  @apply stroke-gray-300;
+}
+
+.recharts-text {
+  @apply fill-gray-600 text-sm;
+}
+
+.recharts-default-tooltip {
+  @apply bg-white border border-gray-200 shadow-lg !important;
+}
+
 /* Width classes for progress bars */
 .w-0 { width: 0%; }
 .w-10 { width: 10%; }
@@ -26,3 +40,8 @@
 .w-80 { width: 80%; }
 .w-90 { width: 90%; }
 .w-100 { width: 100%; }
+
+/* Fix chart background colors */
+.recharts-surface {
+  @apply bg-white;
+}

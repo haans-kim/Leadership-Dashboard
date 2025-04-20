@@ -1,0 +1,10 @@
+declare module 'express';
+declare module 'cors';
+declare module 'multer';
+declare module 'fs';
+declare module 'csv-parse';
+declare module 'exceljs';
+declare module 'pdfkit';
+declare module 'supertest';
+declare module 'vitest';
+declare var process: any; 
