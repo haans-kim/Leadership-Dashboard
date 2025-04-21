@@ -11,7 +11,7 @@ import {
   CartesianGrid,
   XAxis, YAxis,
   PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  Tooltip, Legend
+  Tooltip, Legend, Label
 } from 'recharts';
 
 interface TimeSeriesData { quarter: string; score: number; }
@@ -42,39 +42,98 @@ const Dashboard: React.FC = () => {
   const [principleScores, setPrincipleScores] = useState<PrincipleScore[]>([]);
   const [comparisonData, setComparisonData] = useState<ComparisonData[]>([]);
   const [distributionData, setDistributionData] = useState<DistributionData[]>([]);
+  const [periodOptions, setPeriodOptions] = useState<string[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+  const [targetOptions, setTargetOptions] = useState<{ id: number; name: string }[]>([]);
+  const [selectedTarget, setSelectedTarget] = useState<number | ''>('');
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 초기 로드: 대상자 목록과 시계열(분기) 조회
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      fetch('/api/time-series').then(r => r.json()),
-      fetch('/api/principle-scores').then(r => r.json()),
-      fetch('/api/comparison').then(r => r.json()),
-      fetch('/api/distribution').then(r => r.json()),
-    ])
-      .then(([ts, ps, cmp, dist]) => {
+    // 평가 대상자 목록
+    fetch('/api/targets')
+      .then(r => r.json())
+      .then(setTargetOptions)
+      .catch(err => setError(err.message));
+    // 시계열 데이터 로드 및 분기 옵션 설정
+    fetch('/api/time-series')
+      .then(r => r.json())
+      .then((ts: TimeSeriesData[]) => {
         setTimeSeriesData(ts);
-        setPrincipleScores(ps);
-        setComparisonData(cmp);
-        setDistributionData(dist);
+        const periods = ts.map(d => d.quarter);
+        const sorted = [...periods].reverse();
+        setPeriodOptions(sorted);
+        if (sorted.length) setSelectedPeriod(sorted[0]);
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+  
+  // 분기 또는 대상자 변경 시 데이터 업데이트
+  useEffect(() => {
+    if (!selectedPeriod) return;
+    // 원칙별 점수
+    fetch(`/api/principle-scores?period=${selectedPeriod}${selectedTarget !== '' ? `&targetId=${selectedTarget}` : ''}`)
+      .then(r => r.json())
+      .then(setPrincipleScores)
+      .catch(err => setError(err.message));
+    // 분포 데이터
+    fetch(`/api/distribution?period=${selectedPeriod}${selectedTarget !== '' ? `&targetId=${selectedTarget}` : ''}`)
+      .then(r => r.json())
+      .then((data: DistributionData[]) => {
+        // null 값 필터링
+        const filteredData = data.filter((item: DistributionData) => item.name && item.name.toLowerCase() !== 'null');
+        setDistributionData(filteredData);
+      })
+      .catch(err => setError(err.message));
+    // 비교 분석 데이터
+    fetch(`/api/comparison?period=${selectedPeriod}${selectedTarget !== '' ? `&targetId=${selectedTarget}` : ''}`)
+      .then(r => r.json())
+      .then(data => {
+        console.log('API /api/comparison response:', data);
+        setComparisonData(data);
+      })
+      .catch(err => setError(err.message));
+  }, [selectedPeriod, selectedTarget]);
 
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
   if (error) return <div className="text-red-500 p-4">에러: {error}</div>;
 
   return (
     <div className="p-4 bg-gray-50 min-h-screen">
-      {/* 리포트 다운로드 버튼 */}
-      <div className="flex justify-end mb-4">
-        <ReportDownload />
+      {/* 필터: 설문실시기간, 평가대상자 */}
+      <div className="flex mb-4 space-x-4 items-center">
+        <div>
+          <label className="mr-2 text-sm">설문실시기간:</label>
+          <select
+            className="border rounded p-1 pr-8 appearance-none"
+            value={selectedPeriod}
+            onChange={e => setSelectedPeriod(e.target.value)}
+          >
+            {periodOptions.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mr-2 text-sm">평가대상자:</label>
+          <select
+            className="border rounded p-1 pr-8 appearance-none"
+            value={selectedTarget}
+            onChange={e => setSelectedTarget(e.target.value === '' ? '' : Number(e.target.value))}
+          >
+            <option value="">전체</option>
+            {targetOptions.map(t => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
       {/* 탭 네비게이션 */}
-      <div className="flex space-x-4 mb-6">
+      <div className="flex space-x-4 mb-6 mt-8">
         {(['overview','trends','comparison'] as TabKey[]).map(tab => (
           <button
             key={tab}
@@ -95,7 +154,12 @@ const Dashboard: React.FC = () => {
         />
       )}
       {activeTab === 'trends' && <TrendsTab timeSeriesData={timeSeriesData} />}
-      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} />}
+      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} selfScores={principleScores} />}
+      
+      {/* 리포트 다운로드 버튼 */}
+      <div className="mt-8 flex justify-end">
+        <ReportDownload />
+      </div>
     </div>
   );
 };
@@ -111,11 +175,13 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
   if (!timeSeriesData.length || !principleScores.length || !distributionData.length) {
     return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
   }
+  const total = distributionData.reduce((sum, entry) => sum + entry.value, 0);
   const current = timeSeriesData.at(-1)?.score ?? 0;
   const prev = timeSeriesData.length > 1 ? timeSeriesData.at(-2)?.score ?? current : current;
   const changePct = ((current - prev) / (prev || 1) * 100).toFixed(1);
 
   const colors = ['#8884d8','#82ca9d','#ffc658','#FF8042','#FFBB28'];
+  const filteredDistributionData = distributionData.filter(entry => entry.name && entry.name.toLowerCase() !== 'null');
   return (
     <div className="space-y-6">
       {/* 핵심 지표 카드 */}
@@ -126,27 +192,46 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
           <div className={`text-sm ${+changePct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {+changePct >= 0 ? '↑' : '↓'} {Math.abs(+changePct)}%
           </div>
+          <div className="mt-6">
+            <div className="text-sm text-gray-500">총 응답자:</div>
+            <div className="text-3xl font-bold">{total}명</div>
+          </div>
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">종합 실천도 추이</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={timeSeriesData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={timeSeriesData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="quarter" />
-              <YAxis domain={[0,5]} />
+              <YAxis domain={[0,5]} ticks={[0,1,2,3,4,5]} />
               <Tooltip />
-              <Legend />
+              <Legend wrapperStyle={{ paddingTop: "10px" }}/>
               <Line type="monotone" dataKey="score" stroke="#8884d8" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">평가 점수 분포</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={300}>
             <PieChart>
-              <Pie data={distributionData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>
-                {distributionData.map((entry, i) => (
-                  <Cell key={i} fill={colors[i % colors.length]} />
+              <Pie
+                data={filteredDistributionData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={80}
+                innerRadius={30}
+                label={({ name, value, percent, x, y }) => (
+                  <text x={x} y={y} fill="#000" textAnchor="middle" dominantBaseline="central" fontSize="10">
+                    <tspan x={x} dy="-1em">{name}</tspan>
+                    <tspan x={x} dy="1.5em">{value}명 ({(percent! * 100).toFixed(0)}%)</tspan>
+                  </text>
+                )}
+                labelLine={{ stroke: '#666666', strokeWidth: 1, offset: 20 }}
+              >
+                {filteredDistributionData.map((entry, index) => (
+                  <Cell key={index} fill={colors[index % colors.length]} />
                 ))}
               </Pie>
               <Tooltip />
@@ -156,11 +241,11 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
       </div>
       <div className="bg-white p-4 rounded shadow">
         <h3 className="text-sm text-gray-500 mb-1">원칙별 실천도 점수</h3>
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={500}>
           <BarChart
             data={principleScores}
             layout="vertical"
-            margin={{ top: 5, right: 30, left: 120, bottom: 5 }}
+            margin={{ top: 5, right: 30, left: 200, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
@@ -171,8 +256,11 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
             <YAxis
               dataKey="name"
               type="category"
-              width={120}
-              tick={renderCustomYAxisTick}
+              width={250}
+              tick={({ x, y, payload }) => (
+                <text x={x} y={y} textAnchor="end" fontSize={12} dy={4}
+                >{`${payload.index + 1}. ${payload.value}`}</text>
+              )}
             />
             <Tooltip />
             <Legend />
@@ -208,16 +296,51 @@ function TrendsTab({ timeSeriesData }: { timeSeriesData: TimeSeriesData[]; }) {
 }
 
 // 비교 탭 컴포넌트
-function ComparisonTab({ comparisonData }: { comparisonData: ComparisonData[]; }) {
+function ComparisonTab({ comparisonData, selfScores }: { comparisonData: ComparisonData[]; selfScores: PrincipleScore[]; }) {
+  // 마운트 및 데이터 변경 시 콘솔 로그
+  useEffect(() => {
+    console.log('comparisonData:', comparisonData);
+    console.log('selfScores:', selfScores);
+  }, [comparisonData, selfScores]);
   if (!comparisonData.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
+  // selfScores에서 matching score 가져와 mergedData 생성
+  const mergedData = comparisonData.map(item => {
+    const selfEntry = selfScores.find(ps => ps.name === item.name);
+    // self 값을 정수로 반올림
+    return { ...item, self: selfEntry ? Math.round(selfEntry.score) : Math.round(item.self) };
+  });
+  // debug: mergedData 확인
+  console.log('mergedData:', mergedData);
   return (
     <div className="space-y-6">
       <div className="bg-white p-4 rounded shadow">
         <h3 className="text-sm text-gray-500 mb-1">비교 분석 (RadarChart)</h3>
+        <div className="overflow-x-auto mb-4">
+          <table className="min-w-full text-sm text-left text-gray-700">
+            <thead>
+              <tr>
+                <th className="px-4 py-2">문항</th>
+                <th className="px-4 py-2">구성원</th>
+                <th className="px-4 py-2">본인</th>
+                <th className="px-4 py-2">상사</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mergedData.map((item, idx) => (
+                <tr key={idx} className="border-t">
+                  <td className="px-4 py-2 align-top">{idx + 1}. {item.name}</td>
+                  <td className="px-4 py-2 align-top">{item.members.toFixed(2)}</td>
+                  <td className="px-4 py-2 align-top">{item.self.toFixed(0)}</td>
+                  <td className="px-4 py-2 align-top">{item.manager.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <ResponsiveContainer width="100%" height={300}>
-          <RadarChart data={comparisonData} cx="50%" cy="50%" outerRadius="80%">
+          <RadarChart data={mergedData} cx="50%" cy="50%" outerRadius="80%">
             <PolarGrid />
-            <PolarAngleAxis dataKey="name" />
+            <PolarAngleAxis dataKey="name" tickFormatter={(value, index) => `${index + 1}. ${value}`} />
             <PolarRadiusAxis angle={30} domain={[0,5]} />
             <Radar name="자신" dataKey="self" stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} />
             <Radar name="상사" dataKey="manager" stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.6} />
