@@ -21,6 +21,22 @@ interface DistributionData { name: string; value: number; }
 
 type TabKey = 'overview' | 'trends' | 'comparison';
 
+// Y축 레이블을 두 줄로 렌더링하는 커스텀 tick 함수 (OverviewTab에서도 사용 가능)
+export const renderCustomYAxisTick = (props: any) => {
+  const { x, y, payload } = props;
+  const text: string = payload.value;
+  const len = text.length;
+  const mid = Math.ceil(len / 2);
+  const first = text.substring(0, mid);
+  const second = text.substring(mid);
+  return (
+    <text x={x} y={y} textAnchor="end" fontSize={12} dy={4}>
+      {first}
+      <tspan x={x} dy={16}>{second}</tspan>
+    </text>
+  );
+};
+
 const Dashboard: React.FC = () => {
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([]);
   const [principleScores, setPrincipleScores] = useState<PrincipleScore[]>([]);
@@ -141,10 +157,23 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
       <div className="bg-white p-4 rounded shadow">
         <h3 className="text-sm text-gray-500 mb-1">원칙별 실천도 점수</h3>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={principleScores} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+          <BarChart
+            data={principleScores}
+            layout="vertical"
+            margin={{ top: 5, right: 30, left: 120, bottom: 5 }}
+          >
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" domain={[0,5]} />
-            <YAxis dataKey="name" type="category" width={150} />
+            <XAxis
+              type="number"
+              domain={[0, 5]}
+              ticks={[0,1,2,3,4,5]}
+            />
+            <YAxis
+              dataKey="name"
+              type="category"
+              width={120}
+              tick={renderCustomYAxisTick}
+            />
             <Tooltip />
             <Legend />
             <Bar dataKey="score" name="점수" fill="#82ca9d" />

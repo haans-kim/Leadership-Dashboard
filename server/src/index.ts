@@ -1,4 +1,7 @@
 import express from 'express';
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import cors from 'cors';
 import multer from 'multer';
 import fs from 'fs';
@@ -6,84 +9,27 @@ import { parse } from 'csv-parse';
 import { SurveyResult } from './models/SurveyResult';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+import mysql from 'mysql2/promise';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const upload = multer({ dest: 'uploads/' });
-const surveyResults: SurveyResult[] = [
-  {
-    principle: "신뢰와 존중",
-    score: 4.5,
-    date: "2025-04-01",
-    team: "물류운영팀",
-    userId: "user1"
-  },
-  {
-    principle: "신뢰와 존중",
-    score: 4.2,
-    date: "2025-04-01",
-    team: "IT개발팀",
-    userId: "user2"
-  },
-  {
-    principle: "열정과 도전",
-    score: 4.8,
-    date: "2025-04-01",
-    team: "물류운영팀",
-    userId: "user3"
-  },
-  {
-    principle: "열정과 도전",
-    score: 4.0,
-    date: "2025-04-01",
-    team: "IT개발팀",
-    userId: "user4"
-  },
-  {
-    principle: "고객중심",
-    score: 4.6,
-    date: "2025-04-01",
-    team: "물류운영팀",
-    userId: "user5"
-  },
-  {
-    principle: "고객중심",
-    score: 4.3,
-    date: "2025-04-01",
-    team: "IT개발팀",
-    userId: "user6"
-  },
-  {
-    principle: "윤리/정도",
-    score: 4.7,
-    date: "2025-04-01",
-    team: "물류운영팀",
-    userId: "user7"
-  },
-  {
-    principle: "윤리/정도",
-    score: 4.4,
-    date: "2025-04-01",
-    team: "IT개발팀",
-    userId: "user8"
-  },
-  {
-    principle: "실행력",
-    score: 4.4,
-    date: "2025-04-01",
-    team: "물류운영팀",
-    userId: "user9"
-  },
-  {
-    principle: "실행력",
-    score: 4.1,
-    date: "2025-04-01",
-    team: "IT개발팀",
-    userId: "user10"
-  }
-];
+
+// Create MySQL connection pool
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASS || '',
+  database: process.env.DB_NAME || 'leadership',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+// In-memory survey results placeholder
+const surveyResults: SurveyResult[] = [];
 
 // 전체 설문 결과 조회 (필터 지원)
 app.get('/api/results', (req: any, res: any) => {
@@ -199,53 +145,46 @@ app.get('/api/results/report/pdf', (req: any, res: any) => {
   doc.end();
 });
 
-// 분기별 시계열 데이터 엔드포인트
-app.get('/api/time-series', (req: any, res: any) => {
-  const tsMap: Record<string, { total: number; count: number }> = {};
-  surveyResults.forEach(r => {
-    const date = new Date(r.date);
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const quarterNum = Math.floor((month - 1) / 3) + 1;
-    const key = `${year}-Q${quarterNum}`;
-    if (!tsMap[key]) tsMap[key] = { total: 0, count: 0 };
-    tsMap[key].total += r.score;
-    tsMap[key].count += 1;
-  });
-  const timeSeries = Object.entries(tsMap)
-    .map(([quarter, data]) => {
-      const [y, q] = quarter.split('-Q');
-      return { quarter, score: data.total / data.count, year: Number(y), quarterNum: Number(q) };
-    })
-    .sort((a, b) => a.year === b.year ? a.quarterNum - b.quarterNum : a.year - b.year)
-    .map(({ quarter, score }) => ({ quarter, score }));
+// Replace in-memory time-series with DB query
+app.get('/api/time-series', async (req: any, res: any) => {
+  const [rows]: any[] = await pool.query(
+    `SELECT survey_year, survey_quarter, AVG(CAST(response_value AS UNSIGNED)) AS avg_score
+     FROM survey_response_flat
+     WHERE evaluation_type = '본인'
+     GROUP BY survey_year, survey_quarter
+     ORDER BY survey_year, survey_quarter`
+  );
+  const timeSeries = rows.map((r: any) => ({
+    quarter: `${r.survey_year}-Q${r.survey_quarter}`,
+    score: Number(r.avg_score)
+  }));
   res.json(timeSeries);
 });
 
-// 원칙별 점수 엔드포인트
-app.get('/api/principle-scores', (req: any, res: any) => {
-  const psMap: Record<string, { total: number; count: number }> = {};
-  surveyResults.forEach(r => {
-    if (!psMap[r.principle]) psMap[r.principle] = { total: 0, count: 0 };
-    psMap[r.principle].total += r.score;
-    psMap[r.principle].count += 1;
-  });
-  const principleScores = Object.entries(psMap).map(([principle, data]) => ({
-    principle,
-    name: principle,
-    score: data.total / data.count
+// Replace principle-scores endpoint with DB query
+app.get('/api/principle-scores', async (req: any, res: any) => {
+  const [rows]: any[] = await pool.query(
+    `SELECT question_text AS principle, AVG(CAST(response_value AS UNSIGNED)) AS avg_score
+     FROM survey_response_flat
+     WHERE evaluation_type = '본인'
+     GROUP BY question_no, question_text`
+  );
+  const principleScores = rows.map((r: any) => ({
+    principle: r.principle,
+    name: r.principle,
+    score: Number(r.avg_score)
   }));
   res.json(principleScores);
 });
 
-// 분포 데이터 엔드포인트
-app.get('/api/distribution', (req: any, res: any) => {
-  const distMap: Record<number, number> = {};
-  surveyResults.forEach(r => {
-    const scoreKey = Math.round(r.score);
-    if (!distMap[scoreKey]) distMap[scoreKey] = 0;
-    distMap[scoreKey] += 1;
-  });
+// Replace distribution endpoint with DB query
+app.get('/api/distribution', async (req: any, res: any) => {
+  const [rows]: any[] = await pool.query(
+    `SELECT response_value AS score, COUNT(*) AS count
+     FROM survey_response_flat
+     WHERE evaluation_type = '본인'
+     GROUP BY response_value`
+  );
   const labels: Record<number, string> = {
     1: '미흡(1점)',
     2: '개선필요(2점)',
@@ -253,28 +192,36 @@ app.get('/api/distribution', (req: any, res: any) => {
     4: '우수(4점)',
     5: '탁월(5점)'
   };
-  const distribution = Object.entries(distMap)
-    .map(([scoreStr, value]) => ({
-      name: labels[+scoreStr] || `${scoreStr}점`,
-      value
-    }))
-    .sort((a, b) => {
+  const distribution = rows.map((r: any) => ({
+    name: labels[r.score] || `${r.score}점`,
+    value: r.count
+  })).sort(
+    (a: { name: string; value: number }, b: { name: string; value: number }) => {
       const aNum = Number(a.name.match(/\d+/)?.[0] ?? '0');
       const bNum = Number(b.name.match(/\d+/)?.[0] ?? '0');
       return aNum - bNum;
-    });
+    }
+  );
   res.json(distribution);
 });
 
-// 비교 데이터 엔드포인트 (임시)
-app.get('/api/comparison', (req: any, res: any) => {
-  const comparisonData = [
-    { principle: '신뢰와 존중', name: '신뢰와 존중', self: 4.5, manager: 4.2, members: 4.3 },
-    { principle: '열정과 도전', name: '열정과 도전', self: 4.8, manager: 4.1, members: 4.4 },
-    { principle: '고객중심', name: '고객중심', self: 4.6, manager: 4.3, members: 4.5 },
-    { principle: '윤리/정도', name: '윤리/정도', self: 4.7, manager: 4.4, members: 4.2 },
-    { principle: '실행력', name: '실행력', self: 4.4, manager: 4.2, members: 4.0 }
-  ];
+// Replace comparison endpoint with DB query
+app.get('/api/comparison', async (req: any, res: any) => {
+  const [rows]: any[] = await pool.query(
+    `SELECT question_text AS principle,
+            AVG(CASE WHEN evaluation_type='본인' THEN CAST(response_value AS UNSIGNED) END) AS self,
+            AVG(CASE WHEN evaluation_type='상사' THEN CAST(response_value AS UNSIGNED) END) AS manager,
+            AVG(CASE WHEN evaluation_type='부하' THEN CAST(response_value AS UNSIGNED) END) AS members
+     FROM survey_response_flat
+     GROUP BY question_no, question_text`
+  );
+  const comparisonData = rows.map((r: any) => ({
+    principle: r.principle,
+    name: r.principle,
+    self: Number(r.self),
+    manager: Number(r.manager),
+    members: Number(r.members)
+  }));
   res.json(comparisonData);
 });
 
