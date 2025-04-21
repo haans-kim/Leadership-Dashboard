@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { getAllResults, SurveyResult } from '../services/api';
 
-const ResultsTable: React.FC = () => {
+interface ResultsTableProps {
+  principle: string;
+  team: string;
+  startDate: string;
+  endDate: string;
+}
+
+const ResultsTable: React.FC<ResultsTableProps> = ({ principle, team, startDate, endDate }) => {
   const [data, setData] = useState<SurveyResult[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +22,14 @@ const ResultsTable: React.FC = () => {
 
   if (loading) return <div>로딩 중...</div>;
   if (error) return <div className="text-red-500">에러: {error}</div>;
+
+  // 필터링된 데이터
+  const filteredData = data.filter(item => {
+    return (!principle || item.principle === principle)
+      && (!team || item.team === team)
+      && (!startDate || new Date(item.date) >= new Date(startDate))
+      && (!endDate || new Date(item.date) <= new Date(endDate));
+  });
 
   return (
     <div className="overflow-x-auto">
@@ -30,7 +45,7 @@ const ResultsTable: React.FC = () => {
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {data.map((item, idx) => (
+          {filteredData.map((item, idx) => (
             <tr key={idx}>
               <td className="px-4 py-2 whitespace-nowrap">{item.principle}</td>
               <td className="px-4 py-2 whitespace-nowrap">{item.score}</td>
