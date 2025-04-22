@@ -10,6 +10,7 @@ import { SurveyResult } from './models/SurveyResult';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import mysql from 'mysql2/promise';
+import { Request, Response } from 'express';
 
 const app = express();
 app.use(cors());
@@ -178,31 +179,50 @@ app.get('/api/principle-scores', async (req: any, res: any) => {
 });
 
 // Replace distribution endpoint with DB query
-app.get('/api/distribution', async (req: any, res: any) => {
-  const [rows]: any[] = await pool.query(
-    `SELECT response_value AS score, COUNT(*) AS count
-     FROM survey_response_flat
-     WHERE evaluation_type = '본인'
-     GROUP BY response_value`
-  );
-  const labels: Record<number, string> = {
-    1: '미흡(1점)',
-    2: '개선필요(2점)',
-    3: '양호(3점)',
-    4: '우수(4점)',
-    5: '탁월(5점)'
-  };
-  const distribution = rows.map((r: any) => ({
-    name: labels[r.score] || `${r.score}점`,
-    value: r.count
-  })).sort(
-    (a: { name: string; value: number }, b: { name: string; value: number }) => {
-      const aNum = Number(a.name.match(/\d+/)?.[0] ?? '0');
-      const bNum = Number(b.name.match(/\d+/)?.[0] ?? '0');
-      return aNum - bNum;
+app.get('/api/distribution', async (req: Request, res: Response) => {
+  try {
+    const { period, targetId } = req.query;
+    let query = `
+      SELECT response_value AS score, COUNT(*) AS count
+      FROM survey_response_flat
+      WHERE evaluation_type = '본인'
+    `;
+    const params: any[] = [];
+    if (period) {
+      query += ' AND CONCAT(survey_year, "-Q", survey_quarter) = ?';
+      params.push(period);
     }
-  );
-  res.json(distribution);
+    if (targetId) {
+      query += ' AND target_id = ?';
+      params.push(targetId);
+    }
+    query += ' GROUP BY response_value';
+    const [rows]: any[] = await pool.query(query, params);
+    const labels: Record<number, string> = {
+      1: '미흡(1점)',
+      2: '개선필요(2점)',
+      3: '양호(3점)',
+      4: '우수(4점)',
+      5: '탁월(5점)'
+    };
+    const distribution = rows.map((r: any) => ({
+      name: labels[r.score] || `${r.score}점`,
+      value: r.count
+    })).sort(
+      (a: { name: string; value: number }, b: { name: string; value: number }) => {
+        const aNum = Number(a.name.match(/\d+/)?.[0] ?? '0');
+        const bNum = Number(b.name.match(/\d+/)?.[0] ?? '0');
+        return aNum - bNum;
+      }
+    );
+    res.json(distribution);
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+    }
+  }
 });
 
 // Replace comparison endpoint with DB query
@@ -223,6 +243,25 @@ app.get('/api/comparison', async (req: any, res: any) => {
     members: Number(r.members)
   }));
   res.json(comparisonData);
+});
+
+// 평가 대상자 목록 반환 (survey_response_flat에서 중복 없이 추출)
+app.get('/api/targets', async (req: Request, res: Response) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT target_id AS id, target_name AS name
+       FROM survey_response_flat
+       WHERE target_id IS NOT NULL AND target_name IS NOT NULL
+       ORDER BY name`
+    );
+    res.json(rows);
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+    }
+  }
 });
 
 const PORT = process.env.PORT || 4000;

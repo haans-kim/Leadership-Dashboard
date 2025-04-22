@@ -72,31 +72,22 @@ const Dashboard: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
   
-  // 분기 또는 대상자 변경 시 데이터 업데이트
+  // 분기 또는 평가대상자 변경 시 데이터 재조회
   useEffect(() => {
     if (!selectedPeriod) return;
-    // 원칙별 점수
-    fetch(`/api/principle-scores?period=${selectedPeriod}${selectedTarget !== '' ? `&targetId=${selectedTarget}` : ''}`)
-      .then(r => r.json())
-      .then(setPrincipleScores)
-      .catch(err => setError(err.message));
-    // 분포 데이터
-    fetch(`/api/distribution?period=${selectedPeriod}${selectedTarget !== '' ? `&targetId=${selectedTarget}` : ''}`)
-      .then(r => r.json())
-      .then((data: DistributionData[]) => {
-        // null 값 필터링
-        const filteredData = data.filter((item: DistributionData) => item.name && item.name.toLowerCase() !== 'null');
-        setDistributionData(filteredData);
+    setLoading(true);
+    Promise.all([
+      fetch(`/api/principle-scores?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`).then(r => r.json()),
+      fetch(`/api/distribution?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`).then(r => r.json()),
+      fetch(`/api/comparison?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`).then(r => r.json()),
+    ])
+      .then(([ps, dist, cmp]) => {
+        setPrincipleScores(ps);
+        setDistributionData(dist);
+        setComparisonData(cmp);
       })
-      .catch(err => setError(err.message));
-    // 비교 분석 데이터
-    fetch(`/api/comparison?period=${selectedPeriod}${selectedTarget !== '' ? `&targetId=${selectedTarget}` : ''}`)
-      .then(r => r.json())
-      .then(data => {
-        console.log('API /api/comparison response:', data);
-        setComparisonData(data);
-      })
-      .catch(err => setError(err.message));
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
   }, [selectedPeriod, selectedTarget]);
 
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
