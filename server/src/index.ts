@@ -179,7 +179,7 @@ app.get('/api/principle-scores', async (req: any, res: any) => {
 });
 
 // Replace distribution endpoint with DB query
-app.get('/api/distribution', async (req: Request, res: Response) => {
+app.get('/api/distribution', async (req: any, res: any) => {
   try {
     const { period, targetId } = req.query;
     let query = `
@@ -215,12 +215,14 @@ app.get('/api/distribution', async (req: Request, res: Response) => {
         return aNum - bNum;
       }
     );
-    res.json(distribution);
+    res.json(distribution || []);
   } catch (err) {
     if (err instanceof Error) {
       res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+      return;
     } else {
       res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+      return;
     }
   }
 });
@@ -246,7 +248,7 @@ app.get('/api/comparison', async (req: any, res: any) => {
 });
 
 // 평가 대상자 목록 반환 (survey_response_flat에서 중복 없이 추출)
-app.get('/api/targets', async (req: Request, res: Response) => {
+app.get('/api/targets', async (req: any, res: any) => {
   try {
     const [rows] = await pool.query(
       `SELECT DISTINCT target_id AS id, target_name AS name
@@ -254,12 +256,64 @@ app.get('/api/targets', async (req: Request, res: Response) => {
        WHERE target_id IS NOT NULL AND target_name IS NOT NULL
        ORDER BY name`
     );
-    res.json(rows);
+    res.json(rows || []);
   } catch (err) {
     if (err instanceof Error) {
       res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+      return;
     } else {
       res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+      return;
+    }
+  }
+});
+
+// Raw Data 전체 추출 라우트
+app.get('/api/raw-data', async (req: any, res: any) => {
+  try {
+    const { targetId } = req.query;
+    let query = `
+      SELECT
+        sr.target_id,
+        sr.target_name AS target_name,
+        sr.respondent_id,
+        sr.respondent_name AS respondent_name,
+        u.employee_id,
+        sr.evaluation_type,
+        CONCAT(sr.survey_year, '-Q', sr.survey_quarter) AS period,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '1' THEN sr.response_value END) AS Q01,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '2' THEN sr.response_value END) AS Q02,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '3' THEN sr.response_value END) AS Q03,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '4' THEN sr.response_value END) AS Q04,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '5' THEN sr.response_value END) AS Q05,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '6' THEN sr.response_value END) AS Q06,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '7' THEN sr.response_value END) AS Q07,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '8' THEN sr.response_value END) AS Q08,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '9' THEN sr.response_value END) AS Q09,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '10' THEN sr.response_value END) AS Q10,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '11' THEN sr.response_value END) AS Q11,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '12' THEN sr.response_value END) AS Q12,
+        MAX(CASE WHEN CAST(sr.question_no AS CHAR) = '13' THEN sr.response_value END) AS Q13
+      FROM survey_response_flat sr
+      LEFT JOIN users u ON sr.target_id = u.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    if (targetId) {
+      query += ' AND sr.target_id = ?';
+      params.push(targetId);
+    }
+    query += ` GROUP BY sr.target_id, sr.target_name, sr.respondent_id, sr.respondent_name, u.employee_id, sr.evaluation_type, period`;
+    query += ' ORDER BY period DESC';
+    const [rows]: any[] = await pool.query(query, params);
+    res.json(rows || []);
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+      return;
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+      return;
     }
   }
 });

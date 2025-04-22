@@ -19,7 +19,7 @@ interface PrincipleScore { principle: string; name: string; score: number; }
 interface ComparisonData { principle: string; name: string; self: number; manager: number; members: number; }
 interface DistributionData { name: string; value: number; }
 
-type TabKey = 'overview' | 'trends' | 'comparison';
+type TabKey = 'overview' | 'trends' | 'comparison' | 'raw';
 
 // Y축 레이블을 두 줄로 렌더링하는 커스텀 tick 함수 (OverviewTab에서도 사용 가능)
 export const renderCustomYAxisTick = (props: any) => {
@@ -49,6 +49,7 @@ const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [rawData, setRawData] = useState<any[]>([]);
 
   // 초기 로드: 대상자 목록과 시계열(분기) 조회
   useEffect(() => {
@@ -90,6 +91,17 @@ const Dashboard: React.FC = () => {
       .finally(() => setLoading(false));
   }, [selectedPeriod, selectedTarget]);
 
+  // Raw Data 탭 데이터 로드
+  useEffect(() => {
+    if (activeTab === 'raw') {
+      const params = selectedTarget ? `?targetId=${selectedTarget}` : '';
+      fetch(`/api/raw-data${params}`)
+        .then(r => r.json())
+        .then(setRawData)
+        .catch(err => setError(err.message));
+    }
+  }, [activeTab, selectedTarget]);
+
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
   if (error) return <div className="text-red-500 p-4">에러: {error}</div>;
 
@@ -125,13 +137,13 @@ const Dashboard: React.FC = () => {
       </div>
       {/* 탭 네비게이션 */}
       <div className="flex space-x-4 mb-6 mt-8">
-        {(['overview','trends','comparison'] as TabKey[]).map(tab => (
+        {(['overview','trends','comparison','raw'] as TabKey[]).map(tab => (
           <button
             key={tab}
             className={`px-4 py-2 rounded ${activeTab === tab ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border'}`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'overview' ? '개요' : tab === 'trends' ? '추이 분석' : '비교 분석'}
+            {tab === 'overview' ? '개요' : tab === 'trends' ? '추이 분석' : tab === 'comparison' ? '비교 분석' : 'Raw Data'}
           </button>
         ))}
       </div>
@@ -146,6 +158,7 @@ const Dashboard: React.FC = () => {
       )}
       {activeTab === 'trends' && <TrendsTab timeSeriesData={timeSeriesData} />}
       {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} selfScores={principleScores} />}
+      {activeTab === 'raw' && <RawDataTab data={rawData} />}
       
       {/* 리포트 다운로드 버튼 */}
       <div className="mt-8 flex justify-end">
@@ -341,6 +354,54 @@ function ComparisonTab({ comparisonData, selfScores }: { comparisonData: Compari
           </RadarChart>
         </ResponsiveContainer>
       </div>
+    </div>
+  );
+}
+
+// Raw Data 탭 컴포넌트
+function RawDataTab({ data }: { data: any[] }) {
+  if (!data.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
+  const columns = [
+    { key: 'period', label: '응답시기' },
+    { key: 'respondent_name', label: '응답자' },
+    { key: 'target_name', label: '대상자' },
+    { key: 'employee_id', label: '사번' },
+    { key: 'evaluation_type', label: '응답타입' },
+    { key: 'Q01', label: 'Q01' },
+    { key: 'Q02', label: 'Q02' },
+    { key: 'Q03', label: 'Q03' },
+    { key: 'Q04', label: 'Q04' },
+    { key: 'Q05', label: 'Q05' },
+    { key: 'Q06', label: 'Q06' },
+    { key: 'Q07', label: 'Q07' },
+    { key: 'Q08', label: 'Q08' },
+    { key: 'Q09', label: 'Q09' },
+    { key: 'Q10', label: 'Q10' },
+    { key: 'Q11', label: 'Q11' },
+    { key: 'Q12', label: 'Q12' },
+    { key: 'Q13', label: 'Q13' },
+  ];
+  return (
+    <div className="bg-white p-4 rounded shadow overflow-x-auto">
+      <h3 className="text-sm text-gray-500 mb-1">Raw Data</h3>
+      <table className="min-w-full text-sm text-left text-gray-700 border">
+        <thead>
+          <tr>
+            {columns.map(col => (
+              <th key={col.key} className="px-2 py-1 border-b bg-gray-100">{col.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row, idx) => (
+            <tr key={idx} className="border-t">
+              {columns.map(col => (
+                <td key={col.key} className="px-2 py-1">{row[col.key]}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 } 
