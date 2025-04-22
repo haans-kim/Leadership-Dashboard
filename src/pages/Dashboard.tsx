@@ -50,6 +50,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [rawData, setRawData] = useState<any[]>([]);
+  const [totalRespondents, setTotalRespondents] = useState<number>(0);
 
   // 초기 로드: 대상자 목록과 시계열(분기) 조회
   useEffect(() => {
@@ -89,6 +90,12 @@ const Dashboard: React.FC = () => {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
+
+    // 총 응답자 수 API 호출
+    fetch(`/api/total-respondents?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`)
+      .then(r => r.json())
+      .then(data => setTotalRespondents(data.total ?? 0))
+      .catch(() => setTotalRespondents(0));
   }, [selectedPeriod, selectedTarget]);
 
   // Raw Data 탭 데이터 로드
@@ -154,6 +161,7 @@ const Dashboard: React.FC = () => {
           timeSeriesData={timeSeriesData}
           principleScores={principleScores}
           distributionData={distributionData}
+          totalRespondents={totalRespondents}
         />
       )}
       {activeTab === 'trends' && <TrendsTab timeSeriesData={timeSeriesData} />}
@@ -171,15 +179,15 @@ const Dashboard: React.FC = () => {
 export default Dashboard;
 
 // 개요 탭 컴포넌트
-function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
+function OverviewTab({ timeSeriesData, principleScores, distributionData, totalRespondents }: {
   timeSeriesData: TimeSeriesData[];
   principleScores: PrincipleScore[];
   distributionData: DistributionData[];
+  totalRespondents: number;
 }) {
   if (!timeSeriesData.length || !principleScores.length || !distributionData.length) {
     return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
   }
-  const total = distributionData.reduce((sum, entry) => sum + entry.value, 0);
   const current = timeSeriesData.at(-1)?.score ?? 0;
   const prev = timeSeriesData.length > 1 ? timeSeriesData.at(-2)?.score ?? current : current;
   const changePct = ((current - prev) / (prev || 1) * 100).toFixed(1);
@@ -198,7 +206,7 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData }: {
           </div>
           <div className="mt-6">
             <div className="text-sm text-gray-500">총 응답자:</div>
-            <div className="text-3xl font-bold">{total}명</div>
+            <div className="text-3xl font-bold">{totalRespondents}명</div>
           </div>
         </div>
         <div className="bg-white p-4 rounded shadow">

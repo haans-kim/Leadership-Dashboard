@@ -148,13 +148,23 @@ app.get('/api/results/report/pdf', (req: any, res: any) => {
 
 // Replace in-memory time-series with DB query
 app.get('/api/time-series', async (req: any, res: any) => {
-  const [rows]: any[] = await pool.query(
-    `SELECT survey_year, survey_quarter, AVG(CAST(response_value AS UNSIGNED)) AS avg_score
-     FROM survey_response_flat
-     WHERE evaluation_type = '본인'
-     GROUP BY survey_year, survey_quarter
-     ORDER BY survey_year, survey_quarter`
-  );
+  const { period, targetId } = req.query;
+  let query = `
+    SELECT survey_year, survey_quarter, AVG(CAST(response_value AS UNSIGNED)) AS avg_score
+    FROM survey_response_flat
+    WHERE evaluation_type IN ('상사', '부하')
+  `;
+  const params: any[] = [];
+  if (period) {
+    query += ' AND CONCAT(survey_year, "-Q", survey_quarter) = ?';
+    params.push(period);
+  }
+  if (targetId) {
+    query += ' AND target_id = ?';
+    params.push(targetId);
+  }
+  query += ' GROUP BY survey_year, survey_quarter ORDER BY survey_year, survey_quarter';
+  const [rows]: any[] = await pool.query(query, params);
   const timeSeries = rows.map((r: any) => ({
     quarter: `${r.survey_year}-Q${r.survey_quarter}`,
     score: Number(r.avg_score)
@@ -164,12 +174,23 @@ app.get('/api/time-series', async (req: any, res: any) => {
 
 // Replace principle-scores endpoint with DB query
 app.get('/api/principle-scores', async (req: any, res: any) => {
-  const [rows]: any[] = await pool.query(
-    `SELECT question_text AS principle, AVG(CAST(response_value AS UNSIGNED)) AS avg_score
-     FROM survey_response_flat
-     WHERE evaluation_type = '본인'
-     GROUP BY question_no, question_text`
-  );
+  const { period, targetId } = req.query;
+  let query = `
+    SELECT question_text AS principle, AVG(CAST(response_value AS UNSIGNED)) AS avg_score
+    FROM survey_response_flat
+    WHERE evaluation_type IN ('상사', '부하')
+  `;
+  const params: any[] = [];
+  if (period) {
+    query += ' AND CONCAT(survey_year, "-Q", survey_quarter) = ?';
+    params.push(period);
+  }
+  if (targetId) {
+    query += ' AND target_id = ?';
+    params.push(targetId);
+  }
+  query += ' GROUP BY question_no, question_text';
+  const [rows]: any[] = await pool.query(query, params);
   const principleScores = rows.map((r: any) => ({
     principle: r.principle,
     name: r.principle,
@@ -185,7 +206,7 @@ app.get('/api/distribution', async (req: any, res: any) => {
     let query = `
       SELECT response_value AS score, COUNT(*) AS count
       FROM survey_response_flat
-      WHERE evaluation_type = '본인'
+      WHERE evaluation_type IN ('상사', '부하')
     `;
     const params: any[] = [];
     if (period) {
@@ -307,6 +328,37 @@ app.get('/api/raw-data', async (req: any, res: any) => {
     query += ' ORDER BY period DESC';
     const [rows]: any[] = await pool.query(query, params);
     res.json(rows || []);
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+      return;
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+      return;
+    }
+  }
+});
+
+// 본인 평가 총 응답자 수 반환 API → 상사+구성원 기준, 필터 적용
+app.get('/api/total-respondents', async (req: any, res: any) => {
+  try {
+    const { period, targetId } = req.query;
+    let query = `
+      SELECT COUNT(DISTINCT respondent_id) AS total
+      FROM survey_response_flat
+      WHERE evaluation_type IN ('상사', '부하')
+    `;
+    const params: any[] = [];
+    if (period) {
+      query += ' AND CONCAT(survey_year, "-Q", survey_quarter) = ?';
+      params.push(period);
+    }
+    if (targetId) {
+      query += ' AND target_id = ?';
+      params.push(targetId);
+    }
+    const [rows]: any[] = await pool.query(query, params);
+    res.json({ total: rows[0]?.total ?? 0 });
   } catch (err) {
     if (err instanceof Error) {
       res.status(500).json({ error: 'DB 조회 오류', details: err.message });
