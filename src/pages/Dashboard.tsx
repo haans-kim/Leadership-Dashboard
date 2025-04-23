@@ -101,13 +101,16 @@ const Dashboard: React.FC = () => {
   // Raw Data 탭 데이터 로드
   useEffect(() => {
     if (activeTab === 'raw') {
-      const params = selectedTarget ? `?targetId=${selectedTarget}` : '';
-      fetch(`/api/raw-data${params}`)
+      const params = [];
+      if (selectedPeriod) params.push(`period=${selectedPeriod}`);
+      if (selectedTarget) params.push(`targetId=${selectedTarget}`);
+      const queryString = params.length ? `?${params.join('&')}` : '';
+      fetch(`/api/raw-data${queryString}`)
         .then(r => r.json())
         .then(setRawData)
         .catch(err => setError(err.message));
     }
-  }, [activeTab, selectedTarget]);
+  }, [activeTab, selectedPeriod, selectedTarget]);
 
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
   if (error) return <div className="text-red-500 p-4">에러: {error}</div>;
@@ -315,8 +318,12 @@ function ComparisonTab({ comparisonData, selfScores }: { comparisonData: Compari
     console.log('selfScores:', selfScores);
   }, [comparisonData, selfScores]);
   if (!comparisonData.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
+  // question_no 기준 정렬
+  const sortedData = comparisonData[0]?.question_no
+    ? [...comparisonData].sort((a, b) => Number(a.question_no) - Number(b.question_no))
+    : comparisonData;
   // selfScores에서 matching score 가져와 mergedData 생성
-  const mergedData = comparisonData.map(item => {
+  const mergedData = sortedData.map(item => {
     const selfEntry = selfScores.find(ps => ps.name === item.name);
     // self 값을 정수로 반올림
     return { ...item, self: selfEntry ? Math.round(selfEntry.score) : Math.round(item.self) };
@@ -341,9 +348,9 @@ function ComparisonTab({ comparisonData, selfScores }: { comparisonData: Compari
               {mergedData.map((item, idx) => (
                 <tr key={idx} className="border-t">
                   <td className="px-4 py-2 align-top">{idx + 1}. {item.name}</td>
-                  <td className="px-4 py-2 align-top">{item.members.toFixed(2)}</td>
-                  <td className="px-4 py-2 align-top">{item.self.toFixed(0)}</td>
-                  <td className="px-4 py-2 align-top">{item.manager.toFixed(2)}</td>
+                  <td className="px-4 py-2 align-top">{item.members?.toFixed(2)}</td>
+                  <td className="px-4 py-2 align-top">{item.self?.toFixed(0)}</td>
+                  <td className="px-4 py-2 align-top">{item.manager?.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

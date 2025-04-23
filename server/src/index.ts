@@ -190,6 +190,7 @@ app.get('/api/principle-scores', async (req: any, res: any) => {
     params.push(targetId);
   }
   query += ' GROUP BY question_no, question_text';
+  query += ' ORDER BY question_no';
   const [rows]: any[] = await pool.query(query, params);
   const principleScores = rows.map((r: any) => ({
     principle: r.principle,
@@ -250,14 +251,29 @@ app.get('/api/distribution', async (req: any, res: any) => {
 
 // Replace comparison endpoint with DB query
 app.get('/api/comparison', async (req: any, res: any) => {
-  const [rows]: any[] = await pool.query(
-    `SELECT question_text AS principle,
-            AVG(CASE WHEN evaluation_type='본인' THEN CAST(response_value AS UNSIGNED) END) AS self,
-            AVG(CASE WHEN evaluation_type='상사' THEN CAST(response_value AS UNSIGNED) END) AS manager,
-            AVG(CASE WHEN evaluation_type='부하' THEN CAST(response_value AS UNSIGNED) END) AS members
-     FROM survey_response_flat
-     GROUP BY question_no, question_text`
-  );
+  const { period, targetId } = req.query;
+  let query = `
+    SELECT question_no,
+           question_text AS principle,
+           AVG(CASE WHEN evaluation_type='본인' AND target_id = ? AND respondent_id = ? THEN CAST(response_value AS UNSIGNED) END) AS self,
+           AVG(CASE WHEN evaluation_type='상사' AND target_id = ? THEN CAST(response_value AS UNSIGNED) END) AS manager,
+           AVG(CASE WHEN evaluation_type='부하' AND target_id = ? THEN CAST(response_value AS UNSIGNED) END) AS members
+    FROM survey_response_flat
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+  if (targetId && period) {
+    params.push(targetId);
+    params.push(targetId);
+    params.push(targetId);
+    params.push(targetId);
+    params.push(period);
+    params.push(targetId);
+  }
+  query += ' GROUP BY question_no, question_text';
+  query += ' ORDER BY question_no';
+  const [rows]: any[] = await pool.query(query, params);
+  console.log('comparison API rows:', rows);
   const comparisonData = rows.map((r: any) => ({
     principle: r.principle,
     name: r.principle,
@@ -292,7 +308,7 @@ app.get('/api/targets', async (req: any, res: any) => {
 // Raw Data 전체 추출 라우트
 app.get('/api/raw-data', async (req: any, res: any) => {
   try {
-    const { targetId } = req.query;
+    const { period, targetId } = req.query;
     let query = `
       SELECT
         sr.target_id,
@@ -320,6 +336,10 @@ app.get('/api/raw-data', async (req: any, res: any) => {
       WHERE 1=1
     `;
     const params: any[] = [];
+    if (period) {
+      query += ' AND CONCAT(sr.survey_year, "-Q", sr.survey_quarter) = ?';
+      params.push(period);
+    }
     if (targetId) {
       query += ' AND sr.target_id = ?';
       params.push(targetId);
