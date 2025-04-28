@@ -168,7 +168,7 @@ const Dashboard: React.FC = () => {
         />
       )}
       {activeTab === 'trends' && <TrendsTab timeSeriesData={timeSeriesData} />}
-      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} selfScores={principleScores} />}
+      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} selfScores={principleScores} selectedTarget={selectedTarget} />}
       {activeTab === 'raw' && <RawDataTab data={rawData} />}
       
       {/* 리포트 다운로드 버튼 */}
@@ -311,7 +311,7 @@ function TrendsTab({ timeSeriesData }: { timeSeriesData: TimeSeriesData[]; }) {
 }
 
 // 비교 탭 컴포넌트
-function ComparisonTab({ comparisonData, selfScores }: { comparisonData: ComparisonData[]; selfScores: PrincipleScore[]; }) {
+function ComparisonTab({ comparisonData, selfScores, selectedTarget }: { comparisonData: ComparisonData[]; selfScores: PrincipleScore[]; selectedTarget: number | '' }) {
   // 마운트 및 데이터 변경 시 콘솔 로그
   useEffect(() => {
     console.log('comparisonData:', comparisonData);
@@ -319,9 +319,7 @@ function ComparisonTab({ comparisonData, selfScores }: { comparisonData: Compari
   }, [comparisonData, selfScores]);
   if (!comparisonData.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
   // question_no 기준 정렬
-  const sortedData = comparisonData[0]?.question_no
-    ? [...comparisonData].sort((a, b) => Number(a.question_no) - Number(b.question_no))
-    : comparisonData;
+  const sortedData = comparisonData;
   // selfScores에서 matching score 가져와 mergedData 생성
   const mergedData = sortedData.map(item => {
     const selfEntry = selfScores.find(ps => ps.name === item.name);

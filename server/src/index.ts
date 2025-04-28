@@ -253,38 +253,26 @@ app.get('/api/distribution', async (req: any, res: any) => {
 app.get('/api/comparison', async (req: any, res: any) => {
   try {
     const { period, targetId } = req.query;
-    
-    if (!targetId) {
-      return res.status(400).json({ error: 'targetId is required' });
-    }
 
     let query = `
       SELECT 
              question_no,
              question_text AS principle,
-             AVG(CASE WHEN evaluation_type = '본인' AND target_id = ? AND respondent_id = ? THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS self,
-             AVG(CASE WHEN evaluation_type = '상사' AND target_id = ? THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS manager,
-             AVG(CASE WHEN evaluation_type = '부하' AND target_id = ? THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS members
+             AVG(CASE WHEN evaluation_type = '본인'${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS self,
+             AVG(CASE WHEN evaluation_type = '상사'${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS manager,
+             AVG(CASE WHEN evaluation_type = '부하'${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS members
       FROM survey_response_flat
       WHERE 1=1
     `;
     const params: any[] = [];
-    
-    // Add parameters for self evaluation
-    params.push(targetId);
-    params.push(targetId);
-    
-    // Add parameters for manager evaluation
-    params.push(targetId);
-    
-    // Add parameters for member evaluation
-    params.push(targetId);
-    
+    if (targetId) {
+      // 본인, 상사, 부하 각각에 targetId 파라미터 1개씩
+      params.push(targetId, targetId, targetId);
+    }
     if (period) {
-      query += ' AND survey_period = ?';
+      query += " AND CONCAT(survey_year, '-Q', survey_quarter) = ?";
       params.push(period);
     }
-    
     query += ' GROUP BY question_no, question_text';
     query += ' ORDER BY question_no';
 
@@ -302,7 +290,7 @@ app.get('/api/comparison', async (req: any, res: any) => {
       self: r.self ? Number(r.self) : 0,
       manager: r.manager ? Number(r.manager) : 0,
       members: r.members ? Number(r.members) : 0
-  }));
+    }));
     res.json(comparisonData);
   } catch (error) {
     console.error('Error in /api/comparison:', error);
