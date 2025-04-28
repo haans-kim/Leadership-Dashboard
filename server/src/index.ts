@@ -251,37 +251,63 @@ app.get('/api/distribution', async (req: any, res: any) => {
 
 // Replace comparison endpoint with DB query
 app.get('/api/comparison', async (req: any, res: any) => {
-  const { period, targetId } = req.query;
-  let query = `
-    SELECT question_no,
-           question_text AS principle,
-           AVG(CASE WHEN evaluation_type='본인' AND target_id = ? AND respondent_id = ? THEN CAST(response_value AS UNSIGNED) END) AS self,
-           AVG(CASE WHEN evaluation_type='상사' AND target_id = ? THEN CAST(response_value AS UNSIGNED) END) AS manager,
-           AVG(CASE WHEN evaluation_type='부하' AND target_id = ? THEN CAST(response_value AS UNSIGNED) END) AS members
-    FROM survey_response_flat
-    WHERE 1=1
-  `;
-  const params: any[] = [];
-  if (targetId && period) {
+  try {
+    const { period, targetId } = req.query;
+    
+    if (!targetId) {
+      return res.status(400).json({ error: 'targetId is required' });
+    }
+
+    let query = `
+      SELECT 
+             question_no,
+             question_text AS principle,
+             AVG(CASE WHEN evaluation_type = '본인' AND target_id = ? AND respondent_id = ? THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS self,
+             AVG(CASE WHEN evaluation_type = '상사' AND target_id = ? THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS manager,
+             AVG(CASE WHEN evaluation_type = '부하' AND target_id = ? THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS members
+      FROM survey_response_flat
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    // Add parameters for self evaluation
     params.push(targetId);
     params.push(targetId);
+    
+    // Add parameters for manager evaluation
     params.push(targetId);
+    
+    // Add parameters for member evaluation
     params.push(targetId);
-    params.push(period);
-    params.push(targetId);
-  }
-  query += ' GROUP BY question_no, question_text';
-  query += ' ORDER BY question_no';
-  const [rows]: any[] = await pool.query(query, params);
-  console.log('comparison API rows:', rows);
-  const comparisonData = rows.map((r: any) => ({
-    principle: r.principle,
-    name: r.principle,
-    self: Number(r.self),
-    manager: Number(r.manager),
-    members: Number(r.members)
+    
+    if (period) {
+      query += ' AND survey_period = ?';
+      params.push(period);
+    }
+    
+    query += ' GROUP BY question_no, question_text';
+    query += ' ORDER BY question_no';
+
+    console.log('Executing query with params:', { query, params });
+    const [rows]: any[] = await pool.query(query, params);
+    console.log('comparison API rows:', rows);
+
+    if (!Array.isArray(rows)) {
+      throw new Error('Database response is not an array');
+    }
+
+    const comparisonData = rows.map((r: any) => ({
+      principle: r.principle || '',
+      name: r.principle || '',
+      self: r.self ? Number(r.self) : 0,
+      manager: r.manager ? Number(r.manager) : 0,
+      members: r.members ? Number(r.members) : 0
   }));
-  res.json(comparisonData);
+    res.json(comparisonData);
+  } catch (error) {
+    console.error('Error in /api/comparison:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // 평가 대상자 목록 반환 (survey_response_flat에서 중복 없이 추출)
