@@ -233,7 +233,12 @@ const Dashboard: React.FC = () => {
       {activeTab === 'trends' && <TrendsTab trendData={trendData} />}
       {/* 리포트 다운로드 버튼 */}
       <div className="mt-8 flex justify-end">
-        <ReportDownload />
+        <ReportDownload
+          overviewData={overviewData}
+          distributionData={distributionData}
+          trendData={trendData}
+          comparisonData={comparisonData}
+        />
       </div>
     </div>
   );
