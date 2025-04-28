@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import '../leadership-dashboard.css';
 import ReportDownload from '../components/ReportDownload';
 import {
@@ -38,10 +38,7 @@ export const renderCustomYAxisTick = (props: any) => {
 };
 
 const Dashboard: React.FC = () => {
-  const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([]);
-  const [principleScores, setPrincipleScores] = useState<PrincipleScore[]>([]);
-  const [comparisonData, setComparisonData] = useState<ComparisonData[]>([]);
-  const [distributionData, setDistributionData] = useState<DistributionData[]>([]);
+  const [rawData, setRawData] = useState<any[]>([]);
   const [periodOptions, setPeriodOptions] = useState<string[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [targetOptions, setTargetOptions] = useState<{ id: number; name: string }[]>([]);
@@ -49,22 +46,17 @@ const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [rawData, setRawData] = useState<any[]>([]);
-  const [totalRespondents, setTotalRespondents] = useState<number>(0);
 
   // 초기 로드: 대상자 목록과 시계열(분기) 조회
   useEffect(() => {
     setLoading(true);
-    // 평가 대상자 목록
     fetch('/api/targets')
       .then(r => r.json())
       .then(setTargetOptions)
       .catch(err => setError(err.message));
-    // 시계열 데이터 로드 및 분기 옵션 설정
     fetch('/api/time-series')
       .then(r => r.json())
       .then((ts: TimeSeriesData[]) => {
-        setTimeSeriesData(ts);
         const periods = ts.map(d => d.quarter);
         const sorted = [...periods].reverse();
         setPeriodOptions(sorted);
@@ -73,44 +65,89 @@ const Dashboard: React.FC = () => {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
-  
-  // 분기 또는 평가대상자 변경 시 데이터 재조회
+
+  // period, target 변경 시 rawData만 서버에서 받아옴
   useEffect(() => {
     if (!selectedPeriod) return;
     setLoading(true);
-    Promise.all([
-      fetch(`/api/principle-scores?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`).then(r => r.json()),
-      fetch(`/api/distribution?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`).then(r => r.json()),
-      fetch(`/api/comparison?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`).then(r => r.json()),
-    ])
-      .then(([ps, dist, cmp]) => {
-        setPrincipleScores(ps);
-        setDistributionData(dist);
-        setComparisonData(cmp);
-      })
+    const params = [];
+    if (selectedPeriod) params.push(`period=${selectedPeriod}`);
+    if (selectedTarget) params.push(`targetId=${selectedTarget}`);
+    const queryString = params.length ? `?${params.join('&')}` : '';
+    fetch(`/api/raw-data${queryString}`)
+      .then(r => r.json())
+      .then(setRawData)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-
-    // 총 응답자 수 API 호출
-    fetch(`/api/total-respondents?period=${selectedPeriod}${selectedTarget ? `&targetId=${selectedTarget}` : ''}`)
-      .then(r => r.json())
-      .then(data => setTotalRespondents(data.total ?? 0))
-      .catch(() => setTotalRespondents(0));
   }, [selectedPeriod, selectedTarget]);
 
-  // Raw Data 탭 데이터 로드
-  useEffect(() => {
-    if (activeTab === 'raw') {
-      const params = [];
-      if (selectedPeriod) params.push(`period=${selectedPeriod}`);
-      if (selectedTarget) params.push(`targetId=${selectedTarget}`);
-      const queryString = params.length ? `?${params.join('&')}` : '';
-      fetch(`/api/raw-data${queryString}`)
-        .then(r => r.json())
-        .then(setRawData)
-        .catch(err => setError(err.message));
-    }
-  }, [activeTab, selectedPeriod, selectedTarget]);
+  // rawData 기반 파생 데이터 계산
+  const overviewData = useMemo(() => {
+    if (!rawData.length) return { avg: 0, totalRespondents: 0 };
+    // 전체 평균 (모든 Q01~Q13의 평균)
+    let sum = 0, count = 0;
+    rawData.forEach(row => {
+      for (let i = 1; i <= 13; i++) {
+        const v = Number(row[`Q${i.toString().padStart(2, '0')}`]);
+        if (!isNaN(v) && v !== null && v !== undefined) { sum += v; count++; }
+      }
+    });
+    return {
+      avg: count ? sum / count : 0,
+      totalRespondents: rawData.length
+    };
+  }, [rawData]);
+
+  const distributionData = useMemo(() => {
+    // 점수별 카운트 (1~5)
+    const dist: { [key: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    rawData.forEach(row => {
+      for (let i = 1; i <= 13; i++) {
+        const v = Number(row[`Q${i.toString().padStart(2, '0')}`]);
+        if (!isNaN(v) && v >= 1 && v <= 5) dist[v]++;
+      }
+    });
+    return Object.entries(dist).map(([k, v]) => ({ name: `${k}점`, value: v }));
+  }, [rawData]);
+
+  const comparisonData = useMemo(() => {
+    // 문항별, 평가유형별 평균
+    const questionLabels = [
+      "업무지시할 때 목적, 기대하는 결과물, 방향성 명확히 가이드",
+      "형식보다 내용(본질)에 집중",
+      "전사관점에서 의사결정",
+      "공동목표를 위해 적극적으로 협업하고 실행",
+      "조직의 비전과 목표를 수시로 커뮤니케이션하고 적극 공유",
+      "자유롭게 말할 수 있는 분위기 조성, 개개인의 다양성 존중",
+      "객관적인 데이터 기반 최선의 선택",
+      "기존방식보다 새로운 시도를 통해 더 나은 결과물을 창출",
+      "비효율과 낭비를 즉시 개선",
+      "최신 트렌드에 기민함과 빠른 실행력을 보인다",
+      "고객니즈에 집중하여 최적의 솔루션을 찾는다",
+      "나의 역할, 나의 상황을 고려해 의미있는 업무와 과제를 부여한다",
+      "관찰과 객관적 사실에 기반해 공정하게 평가하고 건설적인 피드백을 준다"
+    ];
+    const result: { [q: string]: { principle: string; name: string; self: number[]; manager: number[]; members: number[] } } = {};
+    rawData.forEach(row => {
+      for (let i = 1; i <= 13; i++) {
+        const qKey = `Q${i.toString().padStart(2, '0')}`;
+        if (!result[qKey]) result[qKey] = { principle: '', name: '', self: [], manager: [], members: [] };
+        const v = Number(row[qKey]);
+        if (isNaN(v)) continue;
+        if (row.evaluation_type === '본인') result[qKey].self.push(v);
+        else if (row.evaluation_type === '상사') result[qKey].manager.push(v);
+        else if (row.evaluation_type === '부하') result[qKey].members.push(v);
+      }
+    });
+    // 평균값 계산 및 문항명 매핑
+    return Object.entries(result).map(([qKey, obj], idx) => ({
+      principle: questionLabels[idx] || `Q${idx+1}`,
+      name: questionLabels[idx] || `Q${idx+1}`,
+      self: obj.self.length ? obj.self.reduce((a, b) => a + b, 0) / obj.self.length : 0,
+      manager: obj.manager.length ? obj.manager.reduce((a, b) => a + b, 0) / obj.manager.length : 0,
+      members: obj.members.length ? obj.members.reduce((a, b) => a + b, 0) / obj.members.length : 0
+    }));
+  }, [rawData]);
 
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
   if (error) return <div className="text-red-500 p-4">에러: {error}</div>;
@@ -157,20 +194,16 @@ const Dashboard: React.FC = () => {
           </button>
         ))}
       </div>
-
       {/* 탭 컨텐츠 */}
       {activeTab === 'overview' && (
         <OverviewTab
-          timeSeriesData={timeSeriesData}
-          principleScores={principleScores}
+          overviewData={overviewData}
           distributionData={distributionData}
-          totalRespondents={totalRespondents}
+          comparisonData={comparisonData}
         />
       )}
-      {activeTab === 'trends' && <TrendsTab timeSeriesData={timeSeriesData} />}
-      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} selfScores={principleScores} selectedTarget={selectedTarget} />}
+      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} />}
       {activeTab === 'raw' && <RawDataTab data={rawData} />}
-      
       {/* 리포트 다운로드 버튼 */}
       <div className="mt-8 flex justify-end">
         <ReportDownload />
@@ -182,31 +215,24 @@ const Dashboard: React.FC = () => {
 export default Dashboard;
 
 // 개요 탭 컴포넌트
-function OverviewTab({ timeSeriesData, principleScores, distributionData, totalRespondents }: {
-  timeSeriesData: TimeSeriesData[];
-  principleScores: PrincipleScore[];
+function OverviewTab({ overviewData, distributionData, comparisonData }: {
+  overviewData: { avg: number; totalRespondents: number };
   distributionData: DistributionData[];
-  totalRespondents: number;
+  comparisonData: ComparisonData[];
 }) {
-  if (!timeSeriesData.length || !principleScores.length || !distributionData.length) {
+  if (!distributionData.length) {
     return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
   }
-  const current = timeSeriesData.at(-1)?.score ?? 0;
-  const prev = timeSeriesData.length > 1 ? timeSeriesData.at(-2)?.score ?? current : current;
-  const changePct = ((current - prev) / (prev || 1) * 100).toFixed(1);
+  const { avg, totalRespondents } = overviewData;
 
   const colors = ['#8884d8','#82ca9d','#ffc658','#FF8042','#FFBB28'];
   const filteredDistributionData = distributionData.filter(entry => entry.name && entry.name.toLowerCase() !== 'null');
   return (
     <div className="space-y-6">
-      {/* 핵심 지표 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">현재 종합 평점</h3>
-          <div className="text-3xl font-bold">{current.toFixed(1)}</div>
-          <div className={`text-sm ${+changePct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {+changePct >= 0 ? '↑' : '↓'} {Math.abs(+changePct)}%
-          </div>
+          <div className="text-3xl font-bold">{avg.toFixed(1)}</div>
           <div className="mt-6">
             <div className="text-sm text-gray-500">총 응답자:</div>
             <div className="text-3xl font-bold">{totalRespondents}명</div>
@@ -214,16 +240,7 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData, totalR
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">종합 실천도 추이</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={timeSeriesData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="quarter" />
-              <YAxis domain={[0,5]} ticks={[0,1,2,3,4,5]} />
-              <Tooltip />
-              <Legend wrapperStyle={{ paddingTop: "10px" }}/>
-              <Line type="monotone" dataKey="score" stroke="#8884d8" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          {/* 추이 차트(필요시) */}
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">평가 점수 분포</h3>
@@ -258,7 +275,7 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData, totalR
         <h3 className="text-sm text-gray-500 mb-1">원칙별 실천도 점수</h3>
         <ResponsiveContainer width="100%" height={500}>
           <BarChart
-            data={principleScores}
+            data={comparisonData}
             layout="vertical"
             margin={{ top: 5, right: 30, left: 200, bottom: 5 }}
           >
@@ -279,7 +296,9 @@ function OverviewTab({ timeSeriesData, principleScores, distributionData, totalR
             />
             <Tooltip />
             <Legend />
-            <Bar dataKey="score" name="점수" fill="#82ca9d" />
+            <Bar dataKey="self" name="본인" fill="#8884d8" />
+            <Bar dataKey="manager" name="상사" fill="#82ca9d" />
+            <Bar dataKey="members" name="구성원" fill="#FF8042" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -311,23 +330,8 @@ function TrendsTab({ timeSeriesData }: { timeSeriesData: TimeSeriesData[]; }) {
 }
 
 // 비교 탭 컴포넌트
-function ComparisonTab({ comparisonData, selfScores, selectedTarget }: { comparisonData: ComparisonData[]; selfScores: PrincipleScore[]; selectedTarget: number | '' }) {
-  // 마운트 및 데이터 변경 시 콘솔 로그
-  useEffect(() => {
-    console.log('comparisonData:', comparisonData);
-    console.log('selfScores:', selfScores);
-  }, [comparisonData, selfScores]);
+function ComparisonTab({ comparisonData }: { comparisonData: ComparisonData[]; }) {
   if (!comparisonData.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
-  // question_no 기준 정렬
-  const sortedData = comparisonData;
-  // selfScores에서 matching score 가져와 mergedData 생성
-  const mergedData = sortedData.map(item => {
-    const selfEntry = selfScores.find(ps => ps.name === item.name);
-    // self 값을 정수로 반올림
-    return { ...item, self: selfEntry ? Math.round(selfEntry.score) : Math.round(item.self) };
-  });
-  // debug: mergedData 확인
-  console.log('mergedData:', mergedData);
   return (
     <div className="space-y-6">
       <div className="bg-white p-4 rounded shadow">
@@ -343,7 +347,7 @@ function ComparisonTab({ comparisonData, selfScores, selectedTarget }: { compari
               </tr>
             </thead>
             <tbody>
-              {mergedData.map((item, idx) => (
+              {comparisonData.map((item, idx) => (
                 <tr key={idx} className="border-t">
                   <td className="px-4 py-2 align-top">{idx + 1}. {item.name}</td>
                   <td className="px-4 py-2 align-top">{item.members?.toFixed(2)}</td>
@@ -355,7 +359,7 @@ function ComparisonTab({ comparisonData, selfScores, selectedTarget }: { compari
           </table>
         </div>
         <ResponsiveContainer width="100%" height={300}>
-          <RadarChart data={mergedData} cx="50%" cy="50%" outerRadius="80%">
+          <RadarChart data={comparisonData} cx="50%" cy="50%" outerRadius="80%">
             <PolarGrid />
             <PolarAngleAxis dataKey="name" tickFormatter={(value, index) => `${index + 1}. ${value}`} />
             <PolarRadiusAxis angle={30} domain={[0,5]} />

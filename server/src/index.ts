@@ -258,11 +258,11 @@ app.get('/api/comparison', async (req: any, res: any) => {
       SELECT 
              question_no,
              question_text AS principle,
-             AVG(CASE WHEN evaluation_type = '본인'${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS self,
+             AVG(CASE WHEN evaluation_type = '본인' AND target_id = respondent_id${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS self,
              AVG(CASE WHEN evaluation_type = '상사'${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS manager,
              AVG(CASE WHEN evaluation_type = '부하'${targetId ? ' AND target_id = ?' : ''} THEN CAST(response_value AS UNSIGNED) ELSE NULL END) AS members
       FROM survey_response_flat
-      WHERE 1=1
+      WHERE evaluation_type IN ('본인', '상사', '부하')
     `;
     const params: any[] = [];
     if (targetId) {
