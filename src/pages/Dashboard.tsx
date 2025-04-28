@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import '../leadership-dashboard.css';
 import ReportDownload from '../components/ReportDownload';
 import {
@@ -13,6 +13,8 @@ import {
   PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   Tooltip, Legend, Label
 } from 'recharts';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface TimeSeriesData { quarter: string; score: number; }
 interface PrincipleScore { principle: string; name: string; score: number; }
@@ -46,13 +48,27 @@ const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const trendsRef = useRef<HTMLDivElement>(null);
+  const comparisonRef = useRef<HTMLDivElement>(null);
+  // PDF 출력용 숨겨진 ref
+  const overviewPrintRef = useRef<HTMLDivElement>(null);
+  const trendsPrintRef = useRef<HTMLDivElement>(null);
+  const comparisonPrintRef = useRef<HTMLDivElement>(null);
 
   // 초기 로드: 대상자 목록과 시계열(분기) 조회
   useEffect(() => {
     setLoading(true);
     fetch('/api/targets')
       .then(r => r.json())
-      .then(setTargetOptions)
+      .then((targets) => {
+        setTargetOptions(targets);
+        // "사용자01"이 있으면 그 id로 초기화
+        const user01 = targets.find((t: { name: string }) => t.name === '사용자01');
+        if (user01) {
+          setSelectedTarget(user01.id);
+        }
+      })
       .catch(err => setError(err.message));
     fetch('/api/time-series')
       .then(r => r.json())
@@ -173,11 +189,49 @@ const Dashboard: React.FC = () => {
       .sort((a, b) => a.quarter.localeCompare(b.quarter));
   }, [rawData]);
 
+  // 3개 영역을 각각 캡처해서 3페이지 PDF로 저장 (출력용 숨겨진 영역 사용)
+  const handleDownloadPDF = async () => {
+    const refs = [overviewPrintRef, trendsPrintRef, comparisonPrintRef];
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i];
+      if (ref.current) {
+        const canvas = await html2canvas(ref.current, { backgroundColor: '#fff', scale: 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const imgProps = pdf.getImageProperties(imgData);
+        const imgWidth = pageWidth;
+        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight > pageHeight ? pageHeight : imgHeight);
+      }
+    }
+    pdf.save('overview-trends-comparison.pdf');
+  };
+
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
   if (error) return <div className="text-red-500 p-4">에러: {error}</div>;
 
   return (
     <div className="p-4 bg-gray-50 min-h-screen">
+      {/* PDF 출력용 숨겨진 영역 */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div ref={overviewPrintRef} style={{ background: '#fff', padding: 24, width: 700 }}>
+          <OverviewTab
+            overviewData={overviewData}
+            distributionData={distributionData}
+            comparisonData={comparisonData}
+            trendData={trendData}
+          />
+        </div>
+        <div ref={trendsPrintRef} style={{ background: '#fff', padding: 24, width: 700, marginTop: 32 }}>
+          <TrendsTab trendData={trendData} />
+        </div>
+        <div ref={comparisonPrintRef} style={{ background: '#fff', padding: 24, width: 700, marginTop: 32 }}>
+          <ComparisonTab comparisonData={comparisonData} />
+        </div>
+      </div>
       {/* 필터: 설문실시기간, 평가대상자 */}
       <div className="flex mb-4 space-x-4 items-center">
         <div>
@@ -221,25 +275,33 @@ const Dashboard: React.FC = () => {
       </div>
       {/* 탭 컨텐츠 */}
       {activeTab === 'overview' && (
-        <OverviewTab
-          overviewData={overviewData}
-          distributionData={distributionData}
-          comparisonData={comparisonData}
-          trendData={trendData}
-        />
+        <>
+          <div ref={overviewRef}>
+            <OverviewTab
+              overviewData={overviewData}
+              distributionData={distributionData}
+              comparisonData={comparisonData}
+              trendData={trendData}
+            />
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button onClick={handleDownloadPDF} className="bg-green-500 text-white px-4 py-2 rounded">PDF 다운로드</button>
+          </div>
+        </>
       )}
-      {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} />}
-      {activeTab === 'raw' && <RawDataTab data={rawDataToShow} />}
-      {activeTab === 'trends' && <TrendsTab trendData={trendData} />}
-      {/* 리포트 다운로드 버튼 */}
-      <div className="mt-8 flex justify-end">
-        <ReportDownload
-          overviewData={overviewData}
-          distributionData={distributionData}
-          trendData={trendData}
-          comparisonData={comparisonData}
-        />
-      </div>
+      {activeTab === 'comparison' && (
+        <div ref={comparisonRef}>
+          <ComparisonTab comparisonData={comparisonData} />
+        </div>
+      )}
+      {activeTab === 'raw' && (
+        <RawDataTab data={rawDataToShow} />
+      )}
+      {activeTab === 'trends' && (
+        <div ref={trendsRef}>
+          <TrendsTab trendData={trendData} />
+        </div>
+      )}
     </div>
   );
 };
