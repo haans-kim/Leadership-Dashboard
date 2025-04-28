@@ -68,25 +68,32 @@ const Dashboard: React.FC = () => {
 
   // period, target 변경 시 rawData만 서버에서 받아옴
   useEffect(() => {
-    if (!selectedPeriod) return;
+    if (!selectedTarget) return;
     setLoading(true);
-    const params = [];
-    if (selectedPeriod) params.push(`period=${selectedPeriod}`);
-    if (selectedTarget) params.push(`targetId=${selectedTarget}`);
-    const queryString = params.length ? `?${params.join('&')}` : '';
-    fetch(`/api/raw-data${queryString}`)
+    fetch(`/api/raw-data?targetId=${selectedTarget}`)
       .then(r => r.json())
       .then(setRawData)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [selectedPeriod, selectedTarget]);
+  }, [selectedTarget]);
 
-  // rawData 기반 파생 데이터 계산
+  // period에 해당하는 데이터만 필터링 (전체는 제외)
+  const filteredData = useMemo(() => {
+    if (!selectedPeriod) return [];
+    return rawData.filter(row => row.period === selectedPeriod);
+  }, [rawData, selectedPeriod]);
+
+  // Raw Data 탭에서만 전체 데이터 보여주기
+  const rawDataToShow = useMemo(() => {
+    if (!selectedPeriod) return rawData;
+    return rawData.filter(row => row.period === selectedPeriod);
+  }, [rawData, selectedPeriod]);
+
+  // 개요/비교분석 등은 filteredData로 집계
   const overviewData = useMemo(() => {
-    if (!rawData.length) return { avg: 0, totalRespondents: 0 };
-    // 전체 평균 (모든 Q01~Q13의 평균)
+    if (!filteredData.length) return { avg: 0, totalRespondents: 0 };
     let sum = 0, count = 0;
-    rawData.forEach(row => {
+    filteredData.forEach(row => {
       for (let i = 1; i <= 13; i++) {
         const v = Number(row[`Q${i.toString().padStart(2, '0')}`]);
         if (!isNaN(v) && v !== null && v !== undefined) { sum += v; count++; }
@@ -94,24 +101,22 @@ const Dashboard: React.FC = () => {
     });
     return {
       avg: count ? sum / count : 0,
-      totalRespondents: rawData.length
+      totalRespondents: filteredData.length
     };
-  }, [rawData]);
+  }, [filteredData]);
 
   const distributionData = useMemo(() => {
-    // 점수별 카운트 (1~5)
     const dist: { [key: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    rawData.forEach(row => {
+    filteredData.forEach(row => {
       for (let i = 1; i <= 13; i++) {
         const v = Number(row[`Q${i.toString().padStart(2, '0')}`]);
         if (!isNaN(v) && v >= 1 && v <= 5) dist[v]++;
       }
     });
     return Object.entries(dist).map(([k, v]) => ({ name: `${k}점`, value: v }));
-  }, [rawData]);
+  }, [filteredData]);
 
   const comparisonData = useMemo(() => {
-    // 문항별, 평가유형별 평균
     const questionLabels = [
       "업무지시할 때 목적, 기대하는 결과물, 방향성 명확히 가이드",
       "형식보다 내용(본질)에 집중",
@@ -128,7 +133,7 @@ const Dashboard: React.FC = () => {
       "관찰과 객관적 사실에 기반해 공정하게 평가하고 건설적인 피드백을 준다"
     ];
     const result: { [q: string]: { principle: string; name: string; self: number[]; manager: number[]; members: number[] } } = {};
-    rawData.forEach(row => {
+    filteredData.forEach(row => {
       for (let i = 1; i <= 13; i++) {
         const qKey = `Q${i.toString().padStart(2, '0')}`;
         if (!result[qKey]) result[qKey] = { principle: '', name: '', self: [], manager: [], members: [] };
@@ -139,7 +144,6 @@ const Dashboard: React.FC = () => {
         else if (row.evaluation_type === '부하') result[qKey].members.push(v);
       }
     });
-    // 평균값 계산 및 문항명 매핑
     return Object.entries(result).map(([qKey, obj], idx) => ({
       principle: questionLabels[idx] || `Q${idx+1}`,
       name: questionLabels[idx] || `Q${idx+1}`,
@@ -147,6 +151,26 @@ const Dashboard: React.FC = () => {
       manager: obj.manager.length ? obj.manager.reduce((a, b) => a + b, 0) / obj.manager.length : 0,
       members: obj.members.length ? obj.members.reduce((a, b) => a + b, 0) / obj.members.length : 0
     }));
+  }, [filteredData]);
+
+  // 추이분석(트렌드)용: 전체 rawData를 분기별로 집계
+  const trendData = useMemo(() => {
+    // { period: string, score: number }[]
+    const periodMap: { [period: string]: { sum: number; count: number } } = {};
+    rawData.forEach(row => {
+      const period = row.period;
+      for (let i = 1; i <= 13; i++) {
+        const v = Number(row[`Q${i.toString().padStart(2, '0')}`]);
+        if (!isNaN(v) && v !== null && v !== undefined) {
+          if (!periodMap[period]) periodMap[period] = { sum: 0, count: 0 };
+          periodMap[period].sum += v;
+          periodMap[period].count++;
+        }
+      }
+    });
+    return Object.entries(periodMap)
+      .map(([period, { sum, count }]) => ({ quarter: period, score: count ? sum / count : 0 }))
+      .sort((a, b) => a.quarter.localeCompare(b.quarter));
   }, [rawData]);
 
   if (loading) return <div className="flex items-center justify-center h-screen">로딩 중...</div>;
@@ -163,6 +187,7 @@ const Dashboard: React.FC = () => {
             value={selectedPeriod}
             onChange={e => setSelectedPeriod(e.target.value)}
           >
+            <option value="">전체</option>
             {periodOptions.map(p => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -200,10 +225,12 @@ const Dashboard: React.FC = () => {
           overviewData={overviewData}
           distributionData={distributionData}
           comparisonData={comparisonData}
+          trendData={trendData}
         />
       )}
       {activeTab === 'comparison' && <ComparisonTab comparisonData={comparisonData} />}
-      {activeTab === 'raw' && <RawDataTab data={rawData} />}
+      {activeTab === 'raw' && <RawDataTab data={rawDataToShow} />}
+      {activeTab === 'trends' && <TrendsTab trendData={trendData} />}
       {/* 리포트 다운로드 버튼 */}
       <div className="mt-8 flex justify-end">
         <ReportDownload />
@@ -215,10 +242,11 @@ const Dashboard: React.FC = () => {
 export default Dashboard;
 
 // 개요 탭 컴포넌트
-function OverviewTab({ overviewData, distributionData, comparisonData }: {
+function OverviewTab({ overviewData, distributionData, comparisonData, trendData }: {
   overviewData: { avg: number; totalRespondents: number };
   distributionData: DistributionData[];
   comparisonData: ComparisonData[];
+  trendData: { quarter: string; score: number }[];
 }) {
   if (!distributionData.length) {
     return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
@@ -240,7 +268,16 @@ function OverviewTab({ overviewData, distributionData, comparisonData }: {
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">종합 실천도 추이</h3>
-          {/* 추이 차트(필요시) */}
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={trendData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="quarter" />
+              <YAxis domain={[0,5]} ticks={[0,1,2,3,4,5]} allowDecimals={false} />
+              <Tooltip />
+              <Legend wrapperStyle={{ paddingTop: "10px" }}/>
+              <Line type="monotone" dataKey="score" stroke="#8884d8" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-sm text-gray-500 mb-1">평가 점수 분포</h3>
@@ -307,17 +344,17 @@ function OverviewTab({ overviewData, distributionData, comparisonData }: {
 }
 
 // 추이 탭 컴포넌트
-function TrendsTab({ timeSeriesData }: { timeSeriesData: TimeSeriesData[]; }) {
-  if (!timeSeriesData.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
+function TrendsTab({ trendData }: { trendData: { quarter: string; score: number }[] }) {
+  if (!trendData.length) return <div className="text-center text-gray-500 p-4">데이터가 없습니다.</div>;
   return (
     <div className="space-y-6">
       <div className="bg-white p-4 rounded shadow">
         <h3 className="text-sm text-gray-500 mb-1">추이 분석 (ComposedChart)</h3>
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={timeSeriesData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+          <ComposedChart data={trendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="quarter" />
-            <YAxis domain={[0,5]} />
+            <YAxis domain={[0,5]} ticks={[0,1,2,3,4,5]} allowDecimals={false} />
             <Tooltip />
             <Legend />
             <Bar dataKey="score" name="바 차트" barSize={20} fill="#ffc658" />

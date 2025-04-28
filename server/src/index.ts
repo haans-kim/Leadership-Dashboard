@@ -322,7 +322,7 @@ app.get('/api/targets', async (req: any, res: any) => {
 // Raw Data 전체 추출 라우트
 app.get('/api/raw-data', async (req: any, res: any) => {
   try {
-    const { period, targetId } = req.query;
+    const { targetId } = req.query;
     let query = `
       SELECT
         sr.target_id,
@@ -350,10 +350,6 @@ app.get('/api/raw-data', async (req: any, res: any) => {
       WHERE 1=1
     `;
     const params: any[] = [];
-    if (period) {
-      query += ' AND CONCAT(sr.survey_year, "-Q", sr.survey_quarter) = ?';
-      params.push(period);
-    }
     if (targetId) {
       query += ' AND sr.target_id = ?';
       params.push(targetId);
