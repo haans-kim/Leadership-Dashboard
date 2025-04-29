@@ -402,7 +402,7 @@ app.get('/api/total-respondents', async (req: any, res: any) => {
 });
 
 // DataSet 조회 API
-app.get('/api/datasets', async (req: any, res: any) => {
+app.get('/api/datasets', async (req: Request, res: Response) => {
   try {
     const query = `
       SELECT 
@@ -418,18 +418,40 @@ app.get('/api/datasets', async (req: any, res: any) => {
         d.status,
         d.version
       FROM DataSet d
-      JOIN Company c ON d.company_id = c.id
+      JOIN Companies c ON d.company_id = c.id
       ORDER BY d.upload_date DESC
     `;
     
-    const [rows]: any[] = await pool.query(query);
+    const [rows] = await pool.query(query);
     res.json(rows);
   } catch (err) {
-    if (err instanceof Error) {
-      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
-    } else {
-      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
-    }
+    console.error('데이터셋 조회 오류:', err);
+    res.status(500).json({ error: 'DB 조회 오류', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// 사용자 정보 조회 API
+app.get('/api/users', async (req: Request, res: Response) => {
+  try {
+    const query = `
+      SELECT 
+        u.id,
+        c.name AS company_name,
+        u.name,
+        u.employee_id,
+        u.phone,
+        u.email,
+        u.title,
+        u.user_type
+      FROM Users u
+      JOIN Companies c ON u.company_id = c.id
+    `;
+    
+    const [rows]: any = await pool.query(query);
+    res.json(rows);
+  } catch (err: any) {
+    console.error('사용자 정보 조회 오류:', err);
+    res.status(500).json({ error: 'DB 조회 오류', details: err.message });
   }
 });
 

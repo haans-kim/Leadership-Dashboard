@@ -45,3 +45,12 @@
 .recharts-surface {
   @apply bg-white;
 }
+
+table th {
+    font-size: 14px !important;
+    font-weight: bold;
+}
+
+table td {
+    font-size: 14px !important;
+}

@@ -1,101 +1,155 @@
 import React, { useState, useEffect } from 'react';
 
 interface DataSet {
-  company: string;
+  id: number;
+  company_name: string;
+  name: string;
+  description: string;
   period: string;
-  respondents: number;
+  file_type: string;
+  row_count: number;
+  uploaded_by: string;
+  upload_date: string;
+  status: string;
+  version: number;
 }
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('user');
-  const [company, setCompany] = useState('');
-  const [period, setPeriod] = useState('');
-  const [dataSet, setDataSet] = useState<DataSet[]>([]);
-  const [companyOptions, setCompanyOptions] = useState<{ id: number; name: string }[]>([]);
-  const [periodOptions, setPeriodOptions] = useState<string[]>([]);
+  const [datasets, setDatasets] = useState<DataSet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
-    // 회사명 정보 가져오기
-    fetch('/api/companies')
-      .then(r => r.json())
-      .then(setCompanyOptions)
-      .catch(err => console.error('회사명 정보 가져오기 오류:', err));
-
-    // 평가시기 정보 가져오기
-    fetch('/api/time-series')
-      .then(r => r.json())
-      .then((data: any[]) => {
-        const periods = data.map((d: any) => d.quarter);
-        setPeriodOptions(periods);
+    setLoading(true);
+    fetch('/api/datasets')
+      .then(response => response.json())
+      .then(data => {
+        setDatasets(data);
+        setLoading(false);
       })
-      .catch(err => console.error('평가시기 정보 가져오기 오류:', err));
+      .catch(err => {
+        setError('데이터 로딩 중 오류가 발생했습니다.');
+        setLoading(false);
+        console.error('데이터셋 로딩 오류:', err);
+      });
   }, []);
 
   useEffect(() => {
-    if (company && period) {
-      // 데이터베이스에서 데이터 조회
-      fetch(`/api/data?company=${company}&period=${period}`)
-        .then(r => r.json())
-        .then(setDataSet)
-        .catch(err => console.error('데이터 가져오기 오류:', err));
+    if (activeTab === 'user') {
+      setLoading(true);
+      fetch('/api/users')
+        .then(response => response.json())
+        .then(data => {
+          setUsers(data);
+          setLoading(false);
+        })
+        .catch(err => {
+          setError('사용자 정보 로딩 중 오류가 발생했습니다.');
+          setLoading(false);
+          console.error('사용자 정보 로딩 오류:', err);
+        });
     }
-  }, [company, period]);
+  }, [activeTab]);
 
   const renderContent = () => {
-    switch (activeTab) {
-      case 'user':
-        return <div>사용자 정보 관리</div>;
-      case 'data':
-        return (
-          <div>
-            <div className="filters mb-4">
-              <select onChange={(e) => setCompany(e.target.value)} value={company} className="mr-2">
-                <option value="">회사명 선택</option>
-                {companyOptions.map(option => (
-                  <option key={option.id} value={option.name}>{option.name}</option>
-                ))}
-              </select>
-              <select onChange={(e) => setPeriod(e.target.value)} value={period}>
-                <option value="">평가시기 선택</option>
-                {periodOptions.map(option => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </div>
-            <table className="min-w-full bg-white">
-              <thead>
-                <tr>
-                  <th className="py-2">회사명</th>
-                  <th className="py-2">평가시기</th>
-                  <th className="py-2">응답자수</th>
+    if (loading) return <div className="p-4">로딩 중...</div>;
+    if (error) return <div className="p-4 text-red-500">{error}</div>;
+
+    if (activeTab === 'user') {
+      return (
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white border rounded-lg">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회사명</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">성함</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">사번</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">전화번호</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이메일</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">직함</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">사용자 타입</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {users.map((user) => (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">{user.company_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{user.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{user.employee_id}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{user.phone}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{user.email}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{user.title}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{user.user_type}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {dataSet.map((data, index) => (
-                  <tr key={index}>
-                    <td className="py-2">{data.company}</td>
-                    <td className="py-2">{data.period}</td>
-                    <td className="py-2">{data.respondents}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      default:
-        return null;
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white border rounded-lg">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회사명</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">데이터셋명</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">설명</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">기간</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">파일유형</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">데이터 수</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">업로드</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">버전</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {datasets.map((dataset) => (
+              <tr key={dataset.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap">{dataset.company_name}</td>
+                <td className="px-6 py-4 whitespace-nowrap">{dataset.name}</td>
+                <td className="px-6 py-4">{dataset.description}</td>
+                <td className="px-6 py-4 whitespace-nowrap">{dataset.period}</td>
+                <td className="px-6 py-4 whitespace-nowrap">{dataset.file_type}</td>
+                <td className="px-6 py-4 whitespace-nowrap">{dataset.row_count}</td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div>
+                    <div>{dataset.uploaded_by}</div>
+                    <div className="text-sm text-gray-500">
+                      {new Date(dataset.upload_date).toLocaleDateString()}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                    ${dataset.status === 'active' ? 'bg-green-100 text-green-800' : 
+                    dataset.status === 'archived' ? 'bg-yellow-100 text-yellow-800' : 
+                    'bg-red-100 text-red-800'}`}>
+                    {dataset.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">{dataset.version}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   };
 
   return (
-    <div>
-      <div className="tabs flex space-x-2">
-        <button onClick={() => setActiveTab('user')} className={`py-2 px-4 rounded ${activeTab === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>사용자 정보</button>
-        <button onClick={() => setActiveTab('data')} className={`py-2 px-4 rounded ${activeTab === 'data' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>데이터 관리</button>
+    <div className="p-4">
+      <div className="flex flex-col items-start mb-6">
+        <h2 className="text-2xl font-bold mb-4">관리 패널</h2>
+        <div className="tabs flex space-x-4">
+          <button onClick={() => setActiveTab('user')} className={`py-2 px-4 rounded ${activeTab === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>사용자 정보</button>
+          <button onClick={() => setActiveTab('data')} className={`py-2 px-4 rounded ${activeTab === 'data' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>데이터셋 관리</button>
+        </div>
       </div>
-      <div className="content mt-4">
-        {renderContent()}
-      </div>
+      {renderContent()}
     </div>
   );
 };
