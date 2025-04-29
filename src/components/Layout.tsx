@@ -12,6 +12,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="p-4 text-xl font-bold">Leadership Dashboard</div>
         <nav className="p-4">
           <Link to="/dashboard" className="block py-2 px-3 rounded hover:bg-gray-200">Dashboard</Link>
+          <Link to="/admin-dashboard" className="block py-2 px-3 rounded hover:bg-gray-200">Admin Dashboard</Link>
         </nav>
       </aside>
       <div className="flex-1 flex flex-col">

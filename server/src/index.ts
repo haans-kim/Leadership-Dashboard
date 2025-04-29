@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import mysql from 'mysql2/promise';
 import { Request, Response } from 'express';
+import companiesRouter from './companies';
 
 const app = express();
 app.use(cors());
@@ -400,7 +401,41 @@ app.get('/api/total-respondents', async (req: any, res: any) => {
   }
 });
 
+// DataSet 조회 API
+app.get('/api/datasets', async (req: any, res: any) => {
+  try {
+    const query = `
+      SELECT 
+        d.id,
+        c.name as company_name,
+        d.name,
+        d.description,
+        d.period,
+        d.file_type,
+        d.row_count,
+        d.uploaded_by,
+        d.upload_date,
+        d.status,
+        d.version
+      FROM DataSet d
+      JOIN Company c ON d.company_id = c.id
+      ORDER BY d.upload_date DESC
+    `;
+    
+    const [rows]: any[] = await pool.query(query);
+    res.json(rows);
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+    }
+  }
+});
+
+app.use(companiesRouter);
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-export { app };
+export { app, pool };

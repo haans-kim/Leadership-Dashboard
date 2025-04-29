@@ -81,7 +81,7 @@ const Dashboard: React.FC = () => {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
-
+  
   // period, target 변경 시 rawData만 서버에서 받아옴
   useEffect(() => {
     if (!selectedTarget) return;
@@ -277,12 +277,12 @@ const Dashboard: React.FC = () => {
       {activeTab === 'overview' && (
         <>
           <div ref={overviewRef}>
-            <OverviewTab
+        <OverviewTab
               overviewData={overviewData}
-              distributionData={distributionData}
+          distributionData={distributionData}
               comparisonData={comparisonData}
               trendData={trendData}
-            />
+        />
           </div>
           <div className="mt-4 flex justify-end">
             <button onClick={handleDownloadPDF} className="bg-green-500 text-white px-4 py-2 rounded">PDF 다운로드</button>
@@ -300,7 +300,7 @@ const Dashboard: React.FC = () => {
       {activeTab === 'trends' && (
         <div ref={trendsRef}>
           <TrendsTab trendData={trendData} />
-        </div>
+      </div>
       )}
     </div>
   );
