@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SummaryTab from '../components/SummaryTab';
 
 interface DataSet {
   id: number;
@@ -15,7 +16,7 @@ interface DataSet {
 }
 
 const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('user');
+  const [activeTab, setActiveTab] = useState('summary');
   const [datasets, setDatasets] = useState<DataSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,14 +146,16 @@ const AdminDashboard: React.FC = () => {
       <div className="flex flex-col items-start mb-6">
         <h2 className="text-2xl font-bold mb-4">관리 패널</h2>
         <div className="tabs flex space-x-4">
-          <button onClick={() => setActiveTab('user')} className={`py-2 px-4 rounded ${activeTab === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>사용자 정보</button>
+          <button onClick={() => setActiveTab('summary')} className={`py-2 px-4 rounded ${activeTab === 'summary' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>Summary</button>
           <button onClick={() => setActiveTab('data')} className={`py-2 px-4 rounded ${activeTab === 'data' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>데이터셋 관리</button>
+          <button onClick={() => setActiveTab('user')} className={`py-2 px-4 rounded ${activeTab === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-black'}`}>사용자 정보</button>
         </div>
       </div>
-      {renderContent()}
+      {activeTab === 'summary' ? (
+        <div className="p-4"><SummaryTab /></div>
+      ) : renderContent()}
     </div>
   );
 };
 
 export default AdminDashboard;
-

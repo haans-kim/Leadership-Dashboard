@@ -299,6 +299,83 @@ app.get('/api/comparison', async (req: any, res: any) => {
   }
 });
 
+/**
+ * 연도/분기별 요약 테이블 데이터 API
+ * - 연도, 분기, 평균점수, 리더수, 대상수, 응답수, 참여율
+ */
+app.get('/api/summary-table', async (req: any, res: any) => {
+  try {
+    // 연도, 분기별 집계
+    const [rows]: any[] = await pool.query(`
+      SELECT
+        survey_year AS year,
+        CONCAT(survey_quarter, '분기') AS quarter,
+        ROUND(AVG(CAST(response_value AS UNSIGNED)), 2) AS avgScore,
+        COUNT(DISTINCT CASE WHEN evaluation_type IN ('상사', '부하') THEN target_id END) AS leaderCount,
+        COUNT(DISTINCT CASE WHEN evaluation_type IN ('상사', '부하') THEN respondent_id END) AS respondentCount,
+        COUNT(DISTINCT target_id) AS targetCount,
+        CONCAT(ROUND(
+          COUNT(DISTINCT CASE WHEN evaluation_type IN ('상사', '부하') THEN respondent_id END) 
+          / COUNT(DISTINCT CASE WHEN evaluation_type IN ('상사', '부하') THEN target_id END) * 100, 1
+        ), '%') AS participationRate
+      FROM survey_response_flat
+      WHERE evaluation_type IN ('상사', '부하')
+      GROUP BY survey_year, survey_quarter
+      ORDER BY survey_year, survey_quarter
+    `);
+
+    res.json(rows || []);
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+      return;
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+      return;
+    }
+  }
+});
+
+/**
+ * 연도/분기별 리더별 평균점수 분포 API
+ * - 각 분기별로 리더별 평균점수 배열 반환
+ *   [{ year, quarter, leaders: [{ targetId, avgScore }] }]
+ */
+app.get('/api/leader-score-distribution', async (req: any, res: any) => {
+  try {
+    const [rows]: any[] = await pool.query(`
+      SELECT
+        survey_year AS year,
+        survey_quarter AS quarter,
+        target_id,
+        ROUND(AVG(CAST(response_value AS UNSIGNED)), 2) AS avgScore
+      FROM survey_response_flat
+      WHERE evaluation_type IN ('상사', '부하')
+      GROUP BY survey_year, survey_quarter, target_id
+      ORDER BY survey_year, survey_quarter, target_id
+    `);
+
+    // 연도/분기별로 그룹핑
+    const grouped: Record<string, { year: number, quarter: string, leaders: { targetId: string, avgScore: number }[] }> = {};
+    for (const row of rows) {
+      const key = `${row.year}-${row.quarter}`;
+      if (!grouped[key]) {
+        grouped[key] = { year: row.year, quarter: row.quarter + '분기', leaders: [] };
+      }
+      grouped[key].leaders.push({ targetId: row.target_id, avgScore: Number(row.avgScore) });
+    }
+    res.json(Object.values(grouped));
+  } catch (err) {
+    if (err instanceof Error) {
+      res.status(500).json({ error: 'DB 조회 오류', details: err.message });
+      return;
+    } else {
+      res.status(500).json({ error: 'DB 조회 오류', details: String(err) });
+      return;
+    }
+  }
+});
+
 // 평가 대상자 목록 반환 (survey_response_flat에서 중복 없이 추출)
 app.get('/api/targets', async (req: any, res: any) => {
   try {
