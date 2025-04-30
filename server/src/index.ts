@@ -348,21 +348,22 @@ app.get('/api/leader-score-distribution', async (req: any, res: any) => {
         survey_year AS year,
         survey_quarter AS quarter,
         target_id,
+        target_name,
         ROUND(AVG(CAST(response_value AS UNSIGNED)), 2) AS avgScore
       FROM survey_response_flat
       WHERE evaluation_type IN ('상사', '부하')
-      GROUP BY survey_year, survey_quarter, target_id
+      GROUP BY survey_year, survey_quarter, target_id, target_name
       ORDER BY survey_year, survey_quarter, target_id
     `);
 
     // 연도/분기별로 그룹핑
-    const grouped: Record<string, { year: number, quarter: string, leaders: { targetId: string, avgScore: number }[] }> = {};
+    const grouped: Record<string, { year: number, quarter: string, leaders: { targetId: string, name: string, avgScore: number }[] }> = {};
     for (const row of rows) {
       const key = `${row.year}-${row.quarter}`;
       if (!grouped[key]) {
         grouped[key] = { year: row.year, quarter: row.quarter + '분기', leaders: [] };
       }
-      grouped[key].leaders.push({ targetId: row.target_id, avgScore: Number(row.avgScore) });
+      grouped[key].leaders.push({ targetId: row.target_id, name: row.target_name, avgScore: Number(row.avgScore) });
     }
     res.json(Object.values(grouped));
   } catch (err) {
